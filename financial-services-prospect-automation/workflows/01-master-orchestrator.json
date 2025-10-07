@@ -1,0 +1,368 @@
+{
+  "name": "Master Prospect Automation Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-daily-6am",
+      "name": "Daily Discovery - 6 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate batch ID for this daily run\nconst batchId = new Date().toISOString().split('T')[0];\n\nreturn [{ json: { batch_id: batchId, stage: 'discovery', timestamp: new Date().toISOString() } }];"
+      },
+      "id": "init-batch",
+      "name": "Initialize Daily Batch",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "wealth_management_discovery"
+      },
+      "id": "trigger-wealth-mgmt",
+      "name": "1. Wealth Management Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "accounting_firm_discovery"
+      },
+      "id": "trigger-accounting",
+      "name": "2. Accounting Firm Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 280]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "financial_advisors_discovery"
+      },
+      "id": "trigger-advisors",
+      "name": "3. Financial Advisors Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 360]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "equipment_financing_discovery"
+      },
+      "id": "trigger-equipment",
+      "name": "4. Equipment Financing Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 440]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "insurance_agency_discovery"
+      },
+      "id": "trigger-insurance",
+      "name": "5. Insurance Agency Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 520]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "real_estate_discovery"
+      },
+      "id": "trigger-real-estate",
+      "name": "6. Real Estate Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 600]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "venture_capital_discovery"
+      },
+      "id": "trigger-vc-pe",
+      "name": "7. VC/PE Discovery",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 680]
+    },
+    {
+      "parameters": {
+        "mode": "waitForSubworkflow"
+      },
+      "id": "wait-discoveries",
+      "name": "Wait for All Discoveries",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "contact_enrichment_pipeline"
+      },
+      "id": "trigger-enrichment",
+      "name": "Trigger Contact Enrichment",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1100, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "linkedin_intelligence_pipeline"
+      },
+      "id": "trigger-linkedin",
+      "name": "Trigger LinkedIn Intelligence",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1300, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "ai_lead_qualification_agent"
+      },
+      "id": "trigger-qualification",
+      "name": "Trigger AI Qualification",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1500, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": "ai_personalization_agent"
+      },
+      "id": "trigger-personalization",
+      "name": "Trigger AI Personalization",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1700, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate comprehensive daily summary\nconst batchId = $('Initialize Daily Batch').first().json.batch_id;\n\nconst summary = {\n  batch_id: batchId,\n  date: new Date().toISOString().split('T')[0],\n  pipeline_status: 'completed',\n  stages_completed: ['discovery', 'enrichment', 'linkedin_intelligence', 'ai_qualification', 'ai_personalization'],\n  message: '✅ Daily automation pipeline complete! All prospects saved to Supabase.\\n\\n📊 Check Supabase fs_prospects table for results:\\n- Discovered prospects\\n- Enriched contact data\\n- LinkedIn intelligence\\n- AI qualification scores\\n- Personalized outreach drafts',\n  next_steps: '1. Review prospects in Supabase\\n2. Set approved_for_send=TRUE for prospects you want to contact\\n3. Gmail workflow will send automatically at 9 AM daily',\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1900, 400]
+    }
+  ],
+  "connections": {
+    "Daily Discovery - 6 AM": {
+      "main": [
+        [
+          {
+            "node": "Initialize Daily Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Daily Batch": {
+      "main": [
+        [
+          {
+            "node": "1. Wealth Management Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "2. Accounting Firm Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "3. Financial Advisors Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "4. Equipment Financing Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "5. Insurance Agency Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6. Real Estate Discovery",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7. VC/PE Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Wealth Management Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Accounting Firm Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Financial Advisors Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Equipment Financing Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Insurance Agency Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Real Estate Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. VC/PE Discovery": {
+      "main": [
+        [
+          {
+            "node": "Wait for All Discoveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for All Discoveries": {
+      "main": [
+        [
+          {
+            "node": "Trigger Contact Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Contact Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Trigger LinkedIn Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger LinkedIn Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Trigger AI Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger AI Qualification": {
+      "main": [
+        [
+          {
+            "node": "Trigger AI Personalization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger AI Personalization": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["automation", "orchestrator", "ai-agent"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-07T00:00:00.000Z",
+  "versionId": "2"
+}

@@ -1,0 +1,272 @@
+{
+  "name": "Wealth Management Discovery",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate Google search queries for wealth management firms\nconst searchQueries = [\n  'site:*.com \"wealth management\" \"team\" email',\n  'site:*.com \"financial advisor\" \"RIA\" email',\n  'site:*.com \"investment management\" \"advisors\" email',\n  'site:*.com \"private wealth\" \"team\" email contact',\n  'site:*.com \"fee-only\" \"financial planner\" email',\n  'site:*.com \"CFP\" \"wealth manager\" email contact'\n];\n\nreturn searchQueries.map((query, index) => ({\n  json: {\n    query: query,\n    search_type: 'wealth_management',\n    query_id: `wm_${index + 1}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "generate-search-queries",
+      "name": "Generate Search Queries",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/search",
+        "qs": {
+          "q": "={{ $json.query }}",
+          "num": "20"
+        },
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          }
+        }
+      },
+      "id": "google-search",
+      "name": "Execute Google Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse Google search results and extract URLs\nconst html = $json.body || '';\n\n// Extract URLs from search results\nconst urlRegex = /https?:\\/\\/([\\w\\-]+\\.)+[\\w\\-]+(\\/[\\w\\-._~:/?#[\\]@!$&'()*+,;=]*)?/g;\nconst urls = html.match(urlRegex) || [];\n\n// Filter for company websites (exclude Google, social media, directories)\nconst companyUrls = urls.filter(url => \n  !url.includes('google.com') &&\n  !url.includes('facebook.com') &&\n  !url.includes('twitter.com') &&\n  !url.includes('linkedin.com/company') &&\n  url.includes('.com') || url.includes('.net') || url.includes('.co')\n);\n\n// Deduplicate by domain\nconst uniqueDomains = [...new Set(companyUrls.map(url => {\n  try {\n    const domain = new URL(url).hostname;\n    return domain;\n  } catch {\n    return null;\n  }\n}).filter(Boolean))];\n\n// Return array of unique URLs to scrape\nreturn uniqueDomains.slice(0, 10).map(domain => ({\n  json: {\n    url: `https://${domain}`,\n    domain: domain,\n    search_query: $json.query,\n    discovered_at: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "parse-search-results",
+      "name": "Parse Search Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}/team",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          "timeout": 10000,
+          "redirect": {
+            "followRedirects": true,
+            "maxRedirects": 3
+          }
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "scrape-team-page",
+      "name": "Scrape Team Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}/contact",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          "timeout": 10000,
+          "redirect": {
+            "followRedirects": true,
+            "maxRedirects": 3
+          }
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "scrape-contact-page",
+      "name": "Scrape Contact Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract emails, names, and titles from scraped pages\nconst teamPageHtml = $('Scrape Team Page').first().json.body || '';\nconst contactPageHtml = $('Scrape Contact Page').first().json.body || '';\nconst combinedHtml = teamPageHtml + ' ' + contactPageHtml;\n\n// Email extraction\nconst emailRegex = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g;\nconst emails = combinedHtml.match(emailRegex) || [];\n\n// Remove generic emails\nconst validEmails = emails.filter(email => \n  !email.includes('example.com') &&\n  !email.includes('info@') &&\n  !email.includes('support@') &&\n  !email.includes('admin@')\n);\n\n// Extract names (basic pattern matching)\nconst namePatterns = [\n  /([A-Z][a-z]+\\s[A-Z][a-z]+)\\s*[-–—,]\\s*([A-Za-z\\s]+)/g,\n  /([A-Z][a-z]+\\s[A-Z][a-z]+)\\s*[•|]\\s*([A-Za-z\\s]+)/g\n];\n\nconst prospects = [];\n\n// Create prospect records for each unique email\nconst uniqueEmails = [...new Set(validEmails)];\n\nuniqueEmails.forEach((email, index) => {\n  prospects.push({\n    prospect_id: `${$json.domain}_${index + 1}`,\n    email: email,\n    company_domain: $json.domain,\n    company_website: $json.url,\n    industry: 'wealth_management',\n    discovery_source: 'google_search_scraping',\n    discovery_method: $json.search_query,\n    discovered_at: new Date().toISOString(),\n    enrichment_status: 'pending',\n    data_quality_score: 30 // Base score for email discovery\n  });\n});\n\nreturn prospects.map(prospect => ({ json: prospect }));"
+      },
+      "id": "extract-prospect-data",
+      "name": "Extract Prospect Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ]
+        }
+      },
+      "id": "filter-valid-prospects",
+      "name": "Filter Valid Prospects",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "fs_prospects",
+        "options": {}
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate all discovered prospects\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'wealth_management_discovery',\n  prospects_saved: items.length,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "aggregate-results",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Search Queries": {
+      "main": [
+        [
+          {
+            "node": "Execute Google Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Google Search": {
+      "main": [
+        [
+          {
+            "node": "Parse Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Search Results": {
+      "main": [
+        [
+          {
+            "node": "Scrape Team Page",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Scrape Contact Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Team Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Prospect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Contact Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Prospect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Prospect Data": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Prospects": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["financial-services", "discovery", "wealth-management"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-03T00:00:00.000Z",
+  "versionId": "1"
+}
+

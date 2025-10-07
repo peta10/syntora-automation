@@ -1,0 +1,170 @@
+{
+  "name": "AI Search Optimizer Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Weekly Optimization - Sunday 2 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Load last 7 days of discovery results from your database\n// This is a placeholder - connect to your actual database\n\n// Example structure:\nconst last7DaysResults = {\n  total_prospects_discovered: 350,\n  by_query: [\n    {\n      query: 'site:*.com \"wealth management\" \"team\" email',\n      prospects_found: 85,\n      email_discovery_rate: 0.82,\n      avg_quality_score: 78,\n      success_rate: 'high'\n    },\n    {\n      query: 'site:*.com \"financial advisor\" \"RIA\" email',\n      prospects_found: 92,\n      email_discovery_rate: 0.88,\n      avg_quality_score: 81,\n      success_rate: 'high'\n    },\n    {\n      query: 'site:*.com \"CPA firm\" \"team\" email',\n      prospects_found: 67,\n      email_discovery_rate: 0.71,\n      avg_quality_score: 73,\n      success_rate: 'medium'\n    },\n    {\n      query: 'site:*.com \"accounting firm\" \"staff\" email',\n      prospects_found: 58,\n      email_discovery_rate: 0.65,\n      avg_quality_score: 69,\n      success_rate: 'medium'\n    },\n    {\n      query: 'site:*.com \"equipment financing\" \"team\" email',\n      prospects_found: 28,\n      email_discovery_rate: 0.54,\n      avg_quality_score: 62,\n      success_rate: 'low'\n    },\n    {\n      query: 'site:*.com \"insurance agency\" \"advisors\" email',\n      prospects_found: 20,\n      email_discovery_rate: 0.48,\n      avg_quality_score: 58,\n      success_rate: 'low'\n    }\n  ],\n  by_industry: [\n    { industry: 'wealth_management', avg_quality: 79.5, volume: 177 },\n    { industry: 'accounting_firm', avg_quality: 71.0, volume: 125 },\n    { industry: 'equipment_financing', avg_quality: 62.0, volume: 28 },\n    { industry: 'insurance_agency', avg_quality: 58.0, volume: 20 }\n  ]\n};\n\nreturn {\n  json: {\n    analysis_period: 'last_7_days',\n    results: last7DaysResults,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "load-performance-data",
+      "name": "Load Performance Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "optimizer-prompt",
+              "name": "prompt",
+              "value": "={{ \"You are a search query optimization expert for B2B lead generation in financial services.\\n\\nAnalyze this week's performance data and provide actionable recommendations.\\n\\nPERFORMANCE DATA:\\n\" + JSON.stringify($json.results, null, 2) + \"\\n\\nANALYSIS FRAMEWORK:\\n1. Identify top-performing query patterns\\n2. Identify underperforming queries that should be modified or removed\\n3. Suggest new query variations based on successful patterns\\n4. Recommend industry focus shifts based on quality/volume\\n5. Suggest specific improvements to search terms\\n\\nTARGET INDUSTRIES:\\n- Wealth Management (Financial Advisors, RIAs)\\n- Accounting Firms (CPAs, Tax Advisors)\\n- Equipment Financing\\n- Insurance Agencies\\n- All financial services\\n\\nPROVIDE RECOMMENDATIONS IN THIS JSON FORMAT:\\n{\\n  \\\"summary\\\": {\\n    \\\"top_performers\\\": [\\\"list top 3 queries\\\"],\\n    \\\"underperformers\\\": [\\\"list bottom 3 queries\\\"],\\n    \\\"key_insights\\\": [\\\"2-3 main insights\\\"]\\n  },\\n  \\\"query_recommendations\\\": {\\n    \\\"keep\\\": [\\\"queries to keep as-is\\\"],\\n    \\\"modify\\\": [{\\n      \\\"original\\\": \\\"current query\\\",\\n      \\\"suggested\\\": \\\"improved query\\\",\\n      \\\"reasoning\\\": \\\"why this change\\\"\\n    }],\\n    \\\"add_new\\\": [{\\n      \\\"query\\\": \\\"new query to try\\\",\\n      \\\"industry\\\": \\\"target industry\\\",\\n      \\\"reasoning\\\": \\\"why this will work\\\"\\n    }],\\n    \\\"remove\\\": [\\\"queries to stop using\\\"]\\n  },\\n  \\\"industry_recommendations\\\": {\\n    \\\"increase_focus\\\": [\\\"industries to prioritize\\\"],\\n    \\\"decrease_focus\\\": [\\\"industries to deprioritize\\\"],\\n    \\\"reasoning\\\": \\\"why these shifts\\\"\\n  },\\n  \\\"action_items\\\": [\\\"prioritized list of changes to make\\\"]\\n}\\n\\nBe specific and actionable. Focus on practical improvements.\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-optimizer-prompt",
+      "name": "Prepare Optimization Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4o",
+        "options": {
+          "temperature": 0.5,
+          "maxTokens": 2000
+        },
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "gpt4-optimization",
+      "name": "GPT-4 Search Optimization",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse optimization recommendations\nconst aiResponse = $json.message?.content || $json.text || '';\nconst performanceData = $('Load Performance Data').first().json;\n\ntry {\n  const jsonMatch = aiResponse.match(/\\{[\\s\\S]*\\}/);\n  const recommendations = jsonMatch ? JSON.parse(jsonMatch[0]) : {};\n  \n  return {\n    json: {\n      workflow: 'ai_search_optimizer_agent',\n      analysis_period: performanceData.analysis_period,\n      timestamp: new Date().toISOString(),\n      performance_summary: performanceData.results,\n      ai_recommendations: recommendations,\n      optimization_complete: true\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      workflow: 'ai_search_optimizer_agent',\n      analysis_period: performanceData.analysis_period,\n      timestamp: new Date().toISOString(),\n      ai_recommendations: { raw_response: aiResponse },\n      optimization_complete: false,\n      error: error.message\n    }\n  };\n}"
+      },
+      "id": "parse-recommendations",
+      "name": "Parse Recommendations",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "summary-report",
+              "name": "weekly_optimization_report",
+              "value": "={{ \"🔍 WEEKLY SEARCH OPTIMIZATION REPORT\\n\\n📊 PERFORMANCE SUMMARY\\n\" + \"Total Prospects: \" + $json.performance_summary.total_prospects_discovered + \"\\n\\n\" + \"🏆 TOP PERFORMERS:\\n\" + JSON.stringify($json.ai_recommendations.summary.top_performers, null, 2) + \"\\n\\n\" + \"⚠️ UNDERPERFORMERS:\\n\" + JSON.stringify($json.ai_recommendations.summary.underperformers, null, 2) + \"\\n\\n\" + \"💡 KEY INSIGHTS:\\n\" + JSON.stringify($json.ai_recommendations.summary.key_insights, null, 2) + \"\\n\\n\" + \"✅ ACTION ITEMS:\\n\" + JSON.stringify($json.ai_recommendations.action_items, null, 2) + \"\\n\\n\" + \"📋 QUERY CHANGES:\\n\" + \"Keep: \" + $json.ai_recommendations.query_recommendations.keep.length + \" queries\\n\" + \"Modify: \" + $json.ai_recommendations.query_recommendations.modify.length + \" queries\\n\" + \"Add: \" + $json.ai_recommendations.query_recommendations.add_new.length + \" queries\\n\" + \"Remove: \" + $json.ai_recommendations.query_recommendations.remove.length + \" queries\\n\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "format-report",
+      "name": "Format Weekly Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Weekly Optimization - Sunday 2 AM": {
+      "main": [
+        [
+          {
+            "node": "Load Performance Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Performance Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Optimization Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Optimization Prompt": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Search Optimization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Search Optimization": {
+      "main": [
+        [
+          {
+            "node": "Parse Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Format Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["ai-agent", "optimization", "weekly"],
+  "triggerCount": 1,
+  "updatedAt": "2025-10-03T00:00:00.000Z",
+  "versionId": "1"
+}
+

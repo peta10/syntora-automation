@@ -1,0 +1,265 @@
+{
+  "name": "13 - Gmail Outreach Sender",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Daily 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "id": "schedule-trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  prospect_id,\n  first_name,\n  last_name,\n  email,\n  company_name,\n  job_title,\n  email_draft,\n  pain_point_analysis,\n  ai_qualification_grade,\n  recommended_approach\nFROM fs_prospects\nWHERE approved_for_send = TRUE\n  AND status = 'personalized'\n  AND email IS NOT NULL\n  AND ready_for_outreach = TRUE\nORDER BY ai_qualification_score DESC\nLIMIT 20"
+      },
+      "name": "Load Approved Prospects",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "id": "load-prospects",
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Any Prospects Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "id": "check-prospects"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare email data for each prospect\nconst prospects = $input.all();\nconst emailsToSend = [];\n\nfor (const prospect of prospects) {\n  const data = prospect.json;\n  \n  // Parse email draft\n  const emailDraft = typeof data.email_draft === 'string' \n    ? JSON.parse(data.email_draft) \n    : data.email_draft;\n  \n  // Get best subject line (first one from AI)\n  const subject = emailDraft.subject_lines?.[0] || \n                  `Re: Automation opportunity at ${data.company_name}`;\n  \n  // Get email body\n  const body = emailDraft.body || '';\n  \n  // Build personalized email\n  const personalizedBody = `Hi ${data.first_name},\\n\\n${body}\\n\\nBest regards,\\nYour Name\\nYour Company`;\n  \n  emailsToSend.push({\n    json: {\n      prospect_id: data.prospect_id,\n      to: data.email,\n      subject: subject,\n      body: personalizedBody,\n      first_name: data.first_name,\n      last_name: data.last_name,\n      company_name: data.company_name,\n      job_title: data.job_title,\n      grade: data.ai_qualification_grade\n    }\n  });\n}\n\nreturn emailsToSend;"
+      },
+      "name": "Prepare Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ],
+      "id": "prepare-emails"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "message": {
+          "__rl": true,
+          "value": "={{ $json.to }}",
+          "mode": "list",
+          "cachedResultName": "={{ $json.to }}"
+        },
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {
+          "ccList": "",
+          "bccList": ""
+        }
+      },
+      "name": "Send Email via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        200
+      ],
+      "id": "send-gmail",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "your-gmail-credential-id",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "fs_prospects",
+        "filterType": "manual",
+        "matchFields": [
+          {
+            "field": "prospect_id",
+            "value": "={{ $json.prospect_id }}"
+          }
+        ],
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "status",
+              "fieldValue": "contacted"
+            },
+            {
+              "fieldName": "email_sent_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            },
+            {
+              "fieldName": "approved_for_send",
+              "fieldValue": "false"
+            }
+          ]
+        }
+      },
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        200
+      ],
+      "id": "mark-sent",
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate sending results\nconst results = $input.all();\n\nconst summary = {\n  total_sent: results.length,\n  timestamp: new Date().toISOString(),\n  prospects: results.map(r => ({\n    name: `${r.json.first_name} ${r.json.last_name}`,\n    company: r.json.company_name,\n    email: r.json.to,\n    grade: r.json.grade\n  }))\n};\n\nreturn [{ json: summary }];"
+      },
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ],
+      "id": "summary"
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    message: 'No prospects approved for sending today',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "No Prospects",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        400
+      ],
+      "id": "no-prospects"
+    }
+  ],
+  "connections": {
+    "Schedule Daily 9am": {
+      "main": [
+        [
+          {
+            "node": "Load Approved Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Approved Prospects": {
+      "main": [
+        [
+          {
+            "node": "Any Prospects Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Prospects Found?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Emails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Emails": {
+      "main": [
+        [
+          {
+            "node": "Send Email via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email via Gmail": {
+      "main": [
+        [
+          {
+            "node": "Mark as Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark as Sent": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-07T00:00:00.000Z",
+  "versionId": "1"
+}
+

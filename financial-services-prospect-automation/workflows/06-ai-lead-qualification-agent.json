@@ -1,0 +1,187 @@
+{
+  "name": "AI Lead Qualification Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  prospect_id,\n  email,\n  first_name,\n  last_name,\n  company_name,\n  company_domain,\n  company_website,\n  industry,\n  linkedin_url,\n  linkedin_profile_data,\n  company_research,\n  enrichment_quality_score,\n  company_intelligence,\n  personalization_hooks\nFROM fs_prospects\nWHERE status = 'researched'\nORDER BY enrichment_quality_score DESC\nLIMIT 20;"
+      },
+      "id": "select-top-prospects",
+      "name": "Load Researched Prospects",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "qualification-prompt",
+              "name": "prompt",
+              "value": "={{ \"You are an expert lead qualification analyst for financial services AI/automation solutions.\\n\\nAnalyze this prospect and provide a detailed qualification score.\\n\\nPROSPECT DATA:\\n\" + JSON.stringify($json, null, 2) + \"\\n\\nQUALIFICATION CRITERIA (weighted):\\n- Data Completeness (30%): Email verified, phone found, LinkedIn profile, company data\\n- Company Signals (30%): Company size, growth indicators, credentials, years in business\\n- Industry Alignment (20%): Financial services focus (wealth mgmt, accounting, insurance, etc.)\\n- Engagement Potential (10%): LinkedIn activity, modern website, tech adoption signals\\n- Geographic Preference (10%): Chicago gets +10 bonus, all other locations acceptable\\n\\nPROVIDE DETAILED ANALYSIS IN THIS JSON FORMAT:\\n{\\n  \\\"data_completeness_score\\\": 0-30,\\n  \\\"data_completeness_notes\\\": \\\"what data we have/missing\\\",\\n  \\\"company_signals_score\\\": 0-30,\\n  \\\"company_signals_notes\\\": \\\"growth indicators, size, credentials\\\",\\n  \\\"industry_alignment_score\\\": 0-20,\\n  \\\"industry_alignment_notes\\\": \\\"how well they fit financial services\\\",\\n  \\\"engagement_potential_score\\\": 0-10,\\n  \\\"engagement_potential_notes\\\": \\\"LinkedIn activity, website quality\\\",\\n  \\\"geographic_score\\\": 0-10,\\n  \\\"geographic_notes\\\": \\\"location and Chicago bonus if applicable\\\",\\n  \\\"total_qualification_score\\\": 0-100,\\n  \\\"qualification_grade\\\": \\\"A/B/C/D\\\",\\n  \\\"key_strengths\\\": [\\\"list of 2-3 strengths\\\"],\\n  \\\"potential_concerns\\\": [\\\"list of concerns if any\\\"],\\n  \\\"recommended_priority\\\": \\\"High/Medium/Low\\\",\\n  \\\"reasoning\\\": \\\"brief explanation of score\\\"\\n}\\n\\nBe thorough but concise. Focus on signals that indicate they'd benefit from AI/automation solutions.\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-qualification-prompt",
+      "name": "Prepare Qualification Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4o",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 1000
+        },
+        "text": "={{ $json.prompt }}"
+      },
+      "id": "gpt4-qualification",
+      "name": "GPT-4 Lead Qualification",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse GPT-4 response and merge with prospect data\nconst originalData = $('Prepare Qualification Prompt').first().json;\nconst aiResponse = $json.message?.content || $json.text || '';\n\ntry {\n  // Extract JSON from response (GPT-4 might wrap it in markdown)\n  const jsonMatch = aiResponse.match(/\\{[\\s\\S]*\\}/);\n  const aiQualification = jsonMatch ? JSON.parse(jsonMatch[0]) : {};\n  \n  return {\n    json: {\n      ...originalData,\n      ai_qualification: aiQualification,\n      ai_qualification_score: aiQualification.total_qualification_score || 0,\n      ai_qualification_grade: aiQualification.qualification_grade || 'C',\n      ai_priority: aiQualification.recommended_priority || 'Medium',\n      ai_key_strengths: aiQualification.key_strengths || [],\n      ai_concerns: aiQualification.potential_concerns || [],\n      ai_reasoning: aiQualification.reasoning || '',\n      ai_qualified_at: new Date().toISOString(),\n      ai_qualification_complete: true\n    }\n  };\n} catch (error) {\n  // Fallback if JSON parsing fails\n  return {\n    json: {\n      ...originalData,\n      ai_qualification: { raw_response: aiResponse },\n      ai_qualification_score: originalData.enrichment_quality_score || 50,\n      ai_qualification_grade: 'C',\n      ai_priority: 'Medium',\n      ai_qualification_complete: false,\n      ai_error: error.message\n    }\n  };\n}"
+      },
+      "id": "parse-qualification-results",
+      "name": "Parse Qualification Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ \"UPDATE fs_prospects SET \\n  ai_qualification_score = \" + ($json.ai_qualification_score || 0) + \",\\n  ai_qualification_grade = '\" + ($json.ai_qualification_grade || 'C') + \"',\\n  ai_key_strengths = '\" + JSON.stringify($json.ai_key_strengths || []).replace(/'/g, \"''\") + \"',\\n  ai_concerns = '\" + JSON.stringify($json.ai_concerns || []).replace(/'/g, \"''\") + \"',\\n  status = 'qualified',\\n  qualified_at = NOW()\\nWHERE prospect_id = '\" + $json.prospect_id + \"';\" }}"
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase with Qualification",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate qualification summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'ai_lead_qualification_agent',\n  prospects_qualified: items.length,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Load Researched Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Researched Prospects": {
+      "main": [
+        [
+          {
+            "node": "Prepare Qualification Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Qualification Prompt": {
+      "main": [
+        [
+          {
+            "node": "GPT-4 Lead Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4 Lead Qualification": {
+      "main": [
+        [
+          {
+            "node": "Parse Qualification Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Qualification Results": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase with Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase with Qualification": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["ai-agent", "qualification", "scoring"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-03T00:00:00.000Z",
+  "versionId": "1"
+}
+

@@ -1,0 +1,377 @@
+{
+  "name": "LinkedIn Intelligence Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  prospect_id,\n  email,\n  first_name,\n  last_name,\n  company_name,\n  company_domain,\n  company_website,\n  industry,\n  enrichment_quality_score,\n  company_intelligence\nFROM fs_prospects\nWHERE status = 'enriched'\nORDER BY enriched_at DESC;"
+      },
+      "id": "load-prospects",
+      "name": "Load Enriched Prospects",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate LinkedIn profile search query\nconst name = $json.first_name && $json.last_name \n  ? `${$json.first_name} ${$json.last_name}`\n  : $json.full_name || '';\n\nconst company = $json.company_name || $json.company_domain?.split('.')[0] || '';\n\n// Create Google search query for LinkedIn profile\nconst searchQuery = `\"${name}\" \"${company}\" site:linkedin.com/in`;\n\nreturn {\n  json: {\n    ...$json,\n    linkedin_search_query: searchQuery,\n    search_name: name,\n    search_company: company\n  }\n};"
+      },
+      "id": "generate-linkedin-query",
+      "name": "Generate LinkedIn Search",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/search",
+        "qs": {
+          "q": "={{ $json.linkedin_search_query }}",
+          "num": "5"
+        },
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
+        }
+      },
+      "id": "search-linkedin-profile",
+      "name": "Search for LinkedIn Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract LinkedIn profile URL from search results\nconst html = $json.body || '';\n\n// Find LinkedIn profile URLs\nconst linkedinRegex = /https:\\/\\/([a-z]{2,3}\\.)?linkedin\\.com\\/in\\/[a-zA-Z0-9-]+/g;\nconst matches = html.match(linkedinRegex) || [];\n\n// Get first unique profile URL\nconst profileUrl = matches.length > 0 ? matches[0] : null;\n\nconst previousData = $('Generate LinkedIn Search').first().json;\n\nreturn {\n  json: {\n    ...previousData,\n    linkedin_url: profileUrl,\n    linkedin_profile_found: !!profileUrl,\n    linkedin_stage: profileUrl ? 'profile_found' : 'profile_not_found'\n  }\n};"
+      },
+      "id": "extract-profile-url",
+      "name": "Extract Profile URL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.linkedin_profile_found }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-profile-found",
+      "name": "Profile Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.linkedin_url }}",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          "timeout": 15000
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "scrape-linkedin-profile",
+      "name": "Scrape LinkedIn Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 250]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract basic profile information from LinkedIn HTML\nconst html = $json.body || '';\nconst previousData = $('Profile Found?').first().json;\n\n// Extract headline/title\nconst headlinePattern = /<div[^>]*class=\"[^\"]*text-body-medium[^\"]*\"[^>]*>([^<]+)<\\/div>/g;\nconst headlines = [];\nlet match;\nwhile ((match = headlinePattern.exec(html)) !== null) {\n  headlines.push(match[1].trim());\n}\n\n// Extract experience sections (simplified)\nconst experiencePattern = /<span[^>]*class=\"[^\"]*visually-hidden[^\"]*\"[^>]*>([^<]+)<\\/span>/g;\nconst experiences = [];\nwhile ((match = experiencePattern.exec(html)) !== null) {\n  if (match[1].length > 10) {\n    experiences.push(match[1].trim());\n  }\n}\n\n// Extract any visible text content for activity analysis\nconst textContent = html.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ');\n\nreturn {\n  json: {\n    ...previousData,\n    linkedin_profile_data: {\n      headline: headlines[0] || null,\n      profile_text: textContent.substring(0, 5000),\n      experience_snippets: experiences.slice(0, 5)\n    },\n    linkedin_stage: 'profile_scraped'\n  }\n};"
+      },
+      "id": "extract-profile-data",
+      "name": "Extract Profile Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 250]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": "gpt-4o",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        },
+        "text": "={{ $json.text }}"
+      },
+      "id": "chatgpt-company-research",
+      "name": "ChatGPT: Deep Company Research",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [1450, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI - GPT-4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "chatgpt-prompt",
+              "name": "text",
+              "value": "={{ \"You are conducting DEEP RESEARCH on a financial services company for business development purposes.\\n\\nCOMPANY: \" + $json.company_name + \"\\nINDUSTRY: \" + ($json.industry || 'Financial Services') + \"\\nWEBSITE: \" + ($json.company_website || 'Not available') + \"\\n\\nCONDUCT COMPREHENSIVE RESEARCH and provide:\\n\\n1. COMPANY OVERVIEW:\\n   - What they do (products/services)\\n   - Company size and maturity\\n   - Market positioning\\n\\n2. RECENT DEVELOPMENTS (Last 6-12 months):\\n   - Company news or press releases\\n   - Growth indicators (new hires, funding, expansion)\\n   - Product launches or service additions\\n   - Awards or recognition\\n\\n3. CHALLENGES & PAIN POINTS:\\n   - Industry challenges affecting them\\n   - Operational bottlenecks they likely face\\n   - Regulatory or compliance pressures\\n   - Technology gaps or limitations\\n\\n4. AUTOMATION OPPORTUNITIES:\\n   - Where AI/automation could help them\\n   - Manual processes they likely have\\n   - Efficiency improvements possible\\n\\n5. CONTACT STRATEGY:\\n   - Best approach to start a conversation\\n   - Value propositions that would resonate\\n   - Compelling opening hooks\\n\\nProvide specific, actionable insights. If you don't have current information, indicate that and provide general insights for companies of this type.\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-perplexity-query",
+      "name": "Prepare Company Research Query",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Combine LinkedIn profile data with company research\nconst linkedinData = $('Extract Profile Data').first()?.json || {};\nconst companyResearchNode = $('ChatGPT: Deep Company Research').first()?.json;\nconst companyResearch = companyResearchNode?.message?.content || companyResearchNode?.text || 'No research data available';\n\nconst data = linkedinData.linkedin_profile_data ? linkedinData : $json;\n\nreturn {\n  json: {\n    ...data,\n    company_research: companyResearch,\n    linkedin_intelligence_complete: true,\n    intelligence_collected_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "merge-intelligence",
+      "name": "Merge Intelligence Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate email personalization hooks\nconst data = $json;\n\nconst hooks = [];\n\n// Company-based hooks\nif (data.company_research && data.company_research.length > 50) {\n  hooks.push(`Saw the recent news about ${data.company_name}...`);\n  hooks.push(`Noticed ${data.company_name}'s growth in the market...`);\n}\n\n// LinkedIn profile hooks\nif (data.linkedin_profile_data?.headline) {\n  hooks.push(`Your work as ${data.linkedin_profile_data.headline} caught my attention...`);\n}\n\n// Industry hooks\nif (data.industry) {\n  hooks.push(`As someone in the ${data.industry} space...`);\n  hooks.push(`Knowing the challenges in ${data.industry}...`);\n}\n\n// Generic professional hooks\nhooks.push(`Connecting with ${data.company_name} professionals...`);\nhooks.push(`Noticed you work in financial services...`);\n\nreturn {\n  json: {\n    ...data,\n    personalization_hooks: hooks.slice(0, 5),\n    email_ready: true,\n    final_quality_score: (data.enrichment_quality_score || 0) + (hooks.length * 5)\n  }\n};"
+      },
+      "id": "generate-personalization",
+      "name": "Generate Personalization Hooks",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ \"UPDATE fs_prospects SET \\n  linkedin_url = '\" + ($json.linkedin_url || '') + \"',\\n  linkedin_profile_data = '\" + JSON.stringify($json.linkedin_profile_data || {}).replace(/'/g, \"''\") + \"',\\n  company_research = '\" + ($json.company_research || '').replace(/'/g, \"''\") + \"',\\n  personalization_hooks = '\" + JSON.stringify($json.personalization_hooks || []).replace(/'/g, \"''\") + \"',\\n  status = 'researched',\\n  intelligence_collected_at = NOW()\\nWHERE prospect_id = '\" + $json.prospect_id + \"';\" }}"
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase with LinkedIn Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate LinkedIn intelligence summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'linkedin_intelligence_pipeline',\n  prospects_researched: items.length,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Load Enriched Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Enriched Prospects": {
+      "main": [
+        [
+          {
+            "node": "Generate LinkedIn Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Search for LinkedIn Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search for LinkedIn Profile": {
+      "main": [
+        [
+          {
+            "node": "Extract Profile URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Profile URL": {
+      "main": [
+        [
+          {
+            "node": "Profile Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Profile Found?": {
+      "main": [
+        [
+          {
+            "node": "Scrape LinkedIn Profile",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Company Research Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Intelligence Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape LinkedIn Profile": {
+      "main": [
+        [
+          {
+            "node": "Extract Profile Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Profile Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Intelligence Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Company Research Query": {
+      "main": [
+        [
+          {
+            "node": "ChatGPT: Deep Company Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChatGPT: Deep Company Research": {
+      "main": [
+        [
+          {
+            "node": "Merge Intelligence Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Intelligence Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Personalization Hooks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Personalization Hooks": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase with LinkedIn Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase with LinkedIn Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["linkedin", "intelligence", "personalization"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-03T00:00:00.000Z",
+  "versionId": "1"
+}
+

@@ -1,0 +1,242 @@
+{
+  "name": "Contact Enrichment Pipeline",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  prospect_id,\n  email,\n  company_domain,\n  company_website,\n  industry,\n  discovery_source,\n  discovered_at\nFROM fs_prospects\nWHERE status = 'discovered'\nORDER BY discovered_at DESC;"
+      },
+      "id": "load-prospects",
+      "name": "Load Discovered Prospects",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Basic email validation\nconst email = $json.email || '';\n\n// Syntax validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst syntaxValid = emailRegex.test(email);\n\n// Extract domain\nconst domain = email.split('@')[1] || '';\n\n// Check for disposable email domains\nconst disposableDomains = ['tempmail.com', 'guerrillamail.com', '10minutemail.com'];\nconst isDisposable = disposableDomains.some(d => domain.includes(d));\n\nreturn {\n  json: {\n    ...$json,\n    email_validation: {\n      syntax_valid: syntaxValid,\n      domain: domain,\n      is_disposable: isDisposable,\n      validation_score: syntaxValid && !isDisposable ? 70 : 30\n    },\n    enrichment_stage: 'email_validated'\n  }\n};"
+      },
+      "id": "validate-email",
+      "name": "Validate Email Syntax",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.company_website }}/contact",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          "timeout": 10000
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "scrape-for-phone",
+      "name": "Scrape Website for Phone",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract phone numbers from website\nconst html = $json.body || '';\n\n// Phone number patterns (US/Canada focus)\nconst phonePatterns = [\n  /\\b\\d{3}[-.]?\\d{3}[-.]?\\d{4}\\b/g,\n  /\\(\\d{3}\\)\\s*\\d{3}[-.]?\\d{4}/g,\n  /\\b1[-.]?\\d{3}[-.]?\\d{3}[-.]?\\d{4}\\b/g\n];\n\nconst phones = [];\nphonePatterns.forEach(pattern => {\n  const matches = html.match(pattern) || [];\n  phones.push(...matches);\n});\n\n// Clean and format phone numbers\nconst cleanedPhones = [...new Set(phones)].map(phone => \n  phone.replace(/[^0-9]/g, '')\n).filter(phone => phone.length === 10 || phone.length === 11);\n\nreturn {\n  json: {\n    ...$('Validate Email Syntax').first().json,\n    phone_numbers: cleanedPhones,\n    primary_phone: cleanedPhones[0] || null,\n    phone_discovery_status: cleanedPhones.length > 0 ? 'found' : 'not_found',\n    enrichment_stage: 'phone_discovered'\n  }\n};"
+      },
+      "id": "extract-phone-numbers",
+      "name": "Extract Phone Numbers",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.company_website }}/about",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          },
+          "timeout": 10000
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "scrape-company-data",
+      "name": "Scrape Company Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract company information from about page\nconst html = $json.body || '';\nconst previousData = $('Extract Phone Numbers').first().json;\n\n// Extract company description (first paragraph typically)\nconst descPattern = /<p[^>]*>([^<]+)<\\/p>/g;\nconst descriptions = [];\nlet match;\nwhile ((match = descPattern.exec(html)) !== null) {\n  if (match[1].length > 50) {\n    descriptions.push(match[1]);\n  }\n}\n\n// Look for employee count indicators\nconst employeePatterns = [\n  /(\\d+)\\s*(employees?|team members?|professionals?)/i,\n  /team of\\s*(\\d+)/i\n];\n\nlet employeeCount = null;\nfor (const pattern of employeePatterns) {\n  const empMatch = html.match(pattern);\n  if (empMatch) {\n    employeeCount = empMatch[1];\n    break;\n  }\n}\n\n// Extract founding year\nconst yearPattern = /founded\\s*in\\s*(\\d{4})|since\\s*(\\d{4})|established\\s*(\\d{4})/i;\nconst yearMatch = html.match(yearPattern);\nconst foundedYear = yearMatch ? (yearMatch[1] || yearMatch[2] || yearMatch[3]) : null;\n\nreturn {\n  json: {\n    ...previousData,\n    company_intelligence: {\n      description: descriptions[0] || null,\n      employee_count: employeeCount,\n      founded_year: foundedYear,\n      about_page_scraped: true\n    },\n    enrichment_stage: 'company_data_collected'\n  }\n};"
+      },
+      "id": "extract-company-info",
+      "name": "Extract Company Info",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate enrichment quality score\nconst data = $json;\n\nlet score = 0;\n\n// Email validation score\nif (data.email_validation?.syntax_valid) score += 25;\nif (data.email_validation?.validation_score > 60) score += 10;\n\n// Phone discovery score\nif (data.primary_phone) score += 20;\n\n// Company data score\nif (data.company_intelligence?.description) score += 15;\nif (data.company_intelligence?.employee_count) score += 10;\nif (data.company_intelligence?.founded_year) score += 5;\n\n// Website accessibility\nif (data.company_website) score += 10;\n\n// Domain validation\nif (data.company_domain) score += 5;\n\nreturn {\n  json: {\n    ...data,\n    enrichment_quality_score: score,\n    enrichment_grade: score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : 'D',\n    enrichment_completed_at: new Date().toISOString(),\n    ready_for_linkedin_intelligence: score >= 40\n  }\n};"
+      },
+      "id": "calculate-quality-score",
+      "name": "Calculate Quality Score",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ \"UPDATE fs_prospects SET \\n  email_verified = '\" + ($json.email_validation?.syntax_valid || false) + \"',\\n  phone = '\" + ($json.primary_phone || '') + \"',\\n  company_intelligence = '\" + JSON.stringify($json.company_intelligence || {}).replace(/'/g, \"''\") + \"',\\n  enrichment_quality_score = \" + ($json.enrichment_quality_score || 0) + \",\\n  status = 'enriched',\\n  enriched_at = NOW()\\nWHERE prospect_id = '\" + $json.prospect_id + \"';\" }}"
+      },
+      "id": "update-supabase",
+      "name": "Update Supabase with Enrichment",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate enrichment summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'contact_enrichment_pipeline',\n  prospects_enriched: items.length,\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Load Discovered Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Discovered Prospects": {
+      "main": [
+        [
+          {
+            "node": "Validate Email Syntax",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Email Syntax": {
+      "main": [
+        [
+          {
+            "node": "Scrape Website for Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Website for Phone": {
+      "main": [
+        [
+          {
+            "node": "Extract Phone Numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Phone Numbers": {
+      "main": [
+        [
+          {
+            "node": "Scrape Company Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Company Data": {
+      "main": [
+        [
+          {
+            "node": "Extract Company Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Company Info": {
+      "main": [
+        [
+          {
+            "node": "Calculate Quality Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Quality Score": {
+      "main": [
+        [
+          {
+            "node": "Update Supabase with Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supabase with Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["enrichment", "contact-data", "validation"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-03T00:00:00.000Z",
+  "versionId": "1"
+}
+
