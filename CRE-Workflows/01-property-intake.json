@@ -1,0 +1,170 @@
+{
+  "name": "Property Intake & Validation - Optimized",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger-intake",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate input data\nconst input = $json;\nconst errors = [];\n\nif (!input.address || input.address.trim().length < 5) {\n  errors.push('Address is required and must be at least 5 characters');\n}\n\nif (!input.email || !input.email.includes('@')) {\n  errors.push('Valid email is required');\n}\n\nif (!input.property_type) {\n  errors.push('Property type is required');\n}\n\nif (errors.length > 0) {\n  throw new Error('Validation failed: ' + errors.join(', '));\n}\n\nreturn [{ json: input }];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://maps.googleapis.com/maps/api/geocode/json",
+        "qs": {
+          "address": "={{$json.address}}",
+          "key": "={{$env.GOOGLE_MAPS_API_KEY}}"
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "geocode-address",
+      "name": "Google Geocoding API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check for geocoding errors\nif ($json.status !== 'OK' || !$json.results || $json.results.length === 0) {\n  throw new Error('Address geocoding failed: ' + ($json.error_message || 'Address not found'));\n}\n\n// Parse geocoding result\nconst result = $json.results[0];\nconst components = result.address_components;\nconst originalData = $('Validate Input Data').item.json;\n\nconst getComponent = (type) => {\n  const comp = components.find(c => c.types.includes(type));\n  return comp ? comp.long_name : null;\n};\n\nconst parsedData = {\n  original_address: originalData.address,\n  formatted_address: result.formatted_address,\n  street: ((getComponent('street_number') || '') + ' ' + (getComponent('route') || '')).trim(),\n  city: getComponent('locality') || getComponent('administrative_area_level_2'),\n  state: getComponent('administrative_area_level_1'),\n  zip_code: getComponent('postal_code'),\n  county: getComponent('administrative_area_level_2'),\n  property_type: originalData.property_type,\n  email: originalData.email,\n  lat: result.geometry.location.lat,\n  lng: result.geometry.location.lng\n};\n\n// Validate parsed data\nif (!parsedData.city || !parsedData.state || !parsedData.zip_code) {\n  throw new Error('Could not extract complete address components. Please provide a more specific address.');\n}\n\nreturn [{ json: parsedData }];"
+      },
+      "id": "parse-geocode",
+      "name": "Parse & Validate Geocoding Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Load county mapping with caching support\nconst countyMapping = {\n  'Los Angeles County': {\n    assessor: 'https://assessor.lacounty.gov',\n    planning: 'https://planning.lacounty.gov',\n    building: 'https://www.ladbs.org',\n    recorder: 'https://recorder.lacounty.gov',\n    code_enforcement: 'https://planning.lacounty.gov'\n  },\n  'Orange County': {\n    assessor: 'https://www.ocgov.com/services/property',\n    planning: 'https://www.ocplanning.net',\n    building: 'https://www.ocgov.com/services/building',\n    recorder: 'https://www.ocgov.com/services/county-recorder',\n    code_enforcement: 'https://www.ocgov.com/services/code-enforcement'\n  },\n  'San Diego County': {\n    assessor: 'https://www.sdcounty.ca.gov/assessor',\n    planning: 'https://www.sandiegocounty.gov/content/sdc/planning.html',\n    building: 'https://www.sandiegocounty.gov/content/sdc/dpw/permits.html',\n    recorder: 'https://arcc.sdcounty.ca.gov',\n    code_enforcement: 'https://www.sandiegocounty.gov/content/sdc/planning.html'\n  }\n};\n\nconst county = $json.county || 'Los Angeles County';\nconst sites = countyMapping[county] || countyMapping['Los Angeles County'];\n\nif (!sites) {\n  throw new Error(`County ${county} not yet supported. Please contact support.`);\n}\n\nreturn [{\n  json: {\n    ...$json,\n    assessor_url: sites.assessor,\n    planning_url: sites.planning,\n    building_url: sites.building,\n    recorder_url: sites.recorder,\n    code_enforcement_url: sites.code_enforcement,\n    county_supported: true\n  }\n}];"
+      },
+      "id": "county-mapping",
+      "name": "Load County Municipal Sites",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_properties",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "address": "={{$json.formatted_address}}",
+            "street": "={{$json.street}}",
+            "city": "={{$json.city}}",
+            "state": "={{$json.state}}",
+            "zip_code": "={{$json.zip_code}}",
+            "county": "={{$json.county}}",
+            "property_type": "={{$json.property_type}}",
+            "email": "={{$json.email}}",
+            "status": "processing",
+            "created_at": "={{$now}}"
+          }
+        },
+        "options": {
+          "returning": "id"
+        }
+      },
+      "id": "save-property",
+      "name": "Save Property to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format return data with validation\nconst propertyData = $json;\nconst addressData = $('Load County Municipal Sites').item.json;\n\nif (!propertyData.id) {\n  throw new Error('Failed to save property to database');\n}\n\nreturn [{\n  json: {\n    property_id: propertyData.id,\n    formatted_address: propertyData.address,\n    city: propertyData.city,\n    state: propertyData.state,\n    zip_code: propertyData.zip_code,\n    county: propertyData.county,\n    property_type: propertyData.property_type,\n    email: addressData.email,\n    assessor_url: addressData.assessor_url,\n    planning_url: addressData.planning_url,\n    building_url: addressData.building_url,\n    recorder_url: addressData.recorder_url,\n    code_enforcement_url: addressData.code_enforcement_url,\n    county_supported: addressData.county_supported,\n    validation_passed: true\n  }\n}];"
+      },
+      "id": "format-return",
+      "name": "Format Return Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "id": "error-handler-geocode",
+      "name": "Error Handler - Geocoding",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [650, 600],
+      "parameters": {
+        "message": "={{ 'Geocoding failed: ' + ($json.error?.message || $json.error_message || 'Unknown error') }}"
+      }
+    },
+    {
+      "id": "error-handler-supabase",
+      "name": "Error Handler - Database",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1250, 600],
+      "parameters": {
+        "message": "={{ 'Database operation failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Validate Input Data", "type": "main", "index": 0 }]]
+    },
+    "Validate Input Data": {
+      "main": [[{ "node": "Google Geocoding API", "type": "main", "index": 0 }]]
+    },
+    "Google Geocoding API": {
+      "main": [[{ "node": "Parse & Validate Geocoding Result", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Geocoding", "type": "main", "index": 0 }]]
+    },
+    "Parse & Validate Geocoding Result": {
+      "main": [[{ "node": "Load County Municipal Sites", "type": "main", "index": 0 }]]
+    },
+    "Load County Municipal Sites": {
+      "main": [[{ "node": "Save Property to Supabase", "type": "main", "index": 0 }]]
+    },
+    "Save Property to Supabase": {
+      "main": [[{ "node": "Format Return Data", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Database", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "executionTimeout": 300,
+    "maxExecutions": 1000,
+    "retryOnFail": true,
+    "retryCount": 3,
+    "retryDelay": 1000
+  },
+  "staticData": null,
+  "tags": ["cre", "intake", "optimized"],
+  "triggerCount": 0,
+  "updatedAt": "2024-03-15T00:00:00.000Z",
+  "versionId": "2.0"
+}

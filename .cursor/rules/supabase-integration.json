@@ -1,0 +1,261 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "supabase_integration_pattern",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "n8n Workflow Automation",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": ["all_supabase_operations", "database_workflows"]
+  },
+  "documentation_source": "https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.supabase/",
+  "critical_rules": {
+    "credential_management": {
+      "rule": "NEVER hardcode Supabase credential IDs - ALWAYS use environment variables",
+      "wrong": "id: 'your-supabase-credential-id'",
+      "correct": "id: '{{$env.SUPABASE_CREDENTIAL_ID}}'",
+      "reason": "Hardcoded IDs break when workflows are moved between environments and expose credentials"
+    },
+    "field_mapping_structure": {
+      "rule": "ALWAYS use proper field mapping structure for insert/update operations",
+      "wrong": "fields: { field1: 'value1', field2: 'value2' }",
+      "correct_insert": {
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "field1",
+              "fieldValue": "={{$json.value1}}"
+            }
+          ]
+        }
+      },
+      "correct_update": {
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "field1",
+              "fieldValue": "={{$json.value1}}"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "critical_operation_names": {
+    "IMPORTANT": "n8n Supabase node uses these operation names - DO NOT use SQL terminology",
+    "correct_operations": {
+      "create": "Create a new row (NOT insert)",
+      "get_many": "Get many rows (NOT select)",
+      "get": "Get a row (single record)",
+      "update": "Update a row",
+      "delete": "Delete a row"
+    },
+    "wrong_operations": {
+      "insert": "WRONG - use 'create'",
+      "select": "WRONG - use 'get' or 'getMany'"
+    }
+  },
+  "supabase_operations": {
+    "get_many": {
+      "operation": "getMany",
+      "table": "table_name",
+      "filterType": "manual",
+      "matchMode": "matchAll",
+      "conditions": {
+        "conditions": [
+          {
+            "keyName": "field_name",
+            "keyValue": "={{$json.property_id}}"
+          }
+        ]
+      },
+      "options": {
+        "sort": {
+          "sortProperties": [
+            {
+              "fieldName": "created_at",
+              "order": "DESC"
+            }
+          ]
+        },
+        "limit": 10
+      },
+      "notes": "Use for querying data from Supabase tables"
+    },
+    "create": {
+      "operation": "create",
+      "table": "automation.table_name",
+      "dataMode": "defineBelow",
+      "columnsUi": {
+        "values": [
+          {
+            "column": "field1",
+            "value": "={{$json.value1}}"
+          },
+          {
+            "column": "field2",
+            "value": "={{$json.value2}}"
+          }
+        ]
+      },
+      "notes": "Use 'create' NOT 'insert' - creates new records in Supabase",
+      "n8n_ui_shows": "Create - Create a new row"
+    },
+    "update": {
+      "operation": "update",
+      "table": "automation.table_name",
+      "filterType": "manual",
+      "matchMode": "matchAll",
+      "conditions": {
+        "conditions": [
+          {
+            "keyName": "id",
+            "keyValue": "={{$json.id}}"
+          }
+        ]
+      },
+      "dataMode": "defineBelow",
+      "columnsUi": {
+        "values": [
+          {
+            "column": "status",
+            "value": "completed"
+          },
+          {
+            "column": "updated_at",
+            "value": "={{$now}}"
+          }
+        ]
+      },
+      "notes": "Use 'update' to modify existing records - must include filter conditions",
+      "n8n_ui_shows": "Update - Update a row"
+    }
+  },
+  "required_configuration": {
+    "node_type": "n8n-nodes-base.supabase",
+    "typeVersion": 1,
+    "credentials": {
+      "type": "supabaseApi",
+      "always_reference": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+      "never_hardcode": true
+    },
+    "table_naming": {
+      "always_include_schema": "automation.table_name",
+      "never_just_table": "table_name (will fail)"
+    },
+    "field_structure": {
+      "use": "columnsUi with array of { column, value } objects",
+      "not": "fieldsUi or fields or values"
+    }
+  },
+  "common_mistakes": {
+    "mistake_1_hardcoded_credentials": {
+      "description": "Hardcoding credential IDs",
+      "wrong_pattern": "id: 'abc123-hardcoded-id'",
+      "correct_pattern": "id: '{{$env.SUPABASE_CREDENTIAL_ID}}'",
+      "impact": "Workflow breaks when moved to different environment"
+    },
+    "mistake_2_wrong_operation_names": {
+      "description": "Using SQL terminology instead of n8n operation names",
+      "wrong": {
+        "insert": "WRONG - n8n shows 'Create'",
+        "select": "WRONG - n8n shows 'Get' or 'Get Many'"
+      },
+      "correct": {
+        "create": "Create a new row",
+        "getMany": "Get many rows (query multiple)",
+        "get": "Get a row (single record)",
+        "update": "Update a row",
+        "delete": "Delete a row"
+      },
+      "impact": "Workflow import fails with 'Could not find property option'"
+    },
+    "mistake_3_wrong_field_structure": {
+      "description": "Using wrong field parameter name",
+      "wrong_patterns": ["fields", "fieldsUi", "values"],
+      "correct_pattern": "columnsUi: { values: [{ column: 'name', value: '={{...}}' }] }",
+      "impact": "Operation fails or import fails"
+    },
+    "mistake_3_missing_filter_type": {
+      "description": "Not specifying filterType for select/update",
+      "correct_addition": "filterType: 'manual', matchMode: 'matchAll'",
+      "impact": "Query may not filter correctly"
+    },
+    "mistake_4_no_error_handling": {
+      "description": "Not adding error connections",
+      "recommendation": "Always connect error output to Error Handler node"
+    }
+  },
+  "environment_variables_required": {
+    "SUPABASE_CREDENTIAL_ID": {
+      "description": "n8n credential ID for Supabase connection",
+      "type": "string",
+      "required": true,
+      "usage": "{{$env.SUPABASE_CREDENTIAL_ID}}"
+    }
+  },
+  "validation_checklist": {
+    "before_using_supabase_node": [
+      "Is credential using environment variable reference?",
+      "Is operation name correct? (create NOT insert, getMany NOT select)",
+      "Does create/update use dataMode and columnsUi structure?",
+      "Does getMany/get/update use filterType and conditions?",
+      "Is table name prefixed with schema? (automation.cre_properties NOT cre_properties)",
+      "Is error handling connected?",
+      "Are column values using expressions (={{$json.field}})?",
+      "Is table name spelled correctly with automation. prefix?"
+    ]
+  },
+  "correct_n8n_supabase_structure": {
+    "create_operation": {
+      "operation": "create",
+      "table": "automation.cre_properties",
+      "dataMode": "defineBelow",
+      "columnsUi": {
+        "values": [
+          { "column": "address", "value": "={{$json.address}}" },
+          { "column": "city", "value": "={{$json.city}}" }
+        ]
+      }
+    },
+    "get_many_operation": {
+      "operation": "getMany",
+      "table": "automation.cre_documents",
+      "filterType": "manual",
+      "matchMode": "matchAll",
+      "conditions": {
+        "conditions": [
+          { "keyName": "property_id", "keyValue": "={{$json.property_id}}" }
+        ]
+      },
+      "options": {
+        "sort": {
+          "sortProperties": [
+            { "fieldName": "created_at", "order": "DESC" }
+          ]
+        }
+      }
+    },
+    "update_operation": {
+      "operation": "update",
+      "table": "automation.cre_properties",
+      "filterType": "manual",
+      "matchMode": "matchAll",
+      "conditions": {
+        "conditions": [
+          { "keyName": "id", "keyValue": "={{$json.id}}" }
+        ]
+      },
+      "dataMode": "defineBelow",
+      "columnsUi": {
+        "values": [
+          { "column": "status", "value": "completed" },
+          { "column": "updated_at", "value": "={{$now}}" }
+        ]
+      }
+    }
+  }
+}
+

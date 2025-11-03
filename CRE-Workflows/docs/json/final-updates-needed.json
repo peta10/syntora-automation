@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "document_type": "FINAL_UPDATES",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "status": "IDENTIFYING_REMAINING_UPDATES"
+  },
+  "completed_updates": {
+    "credentials": "✅ All hardcoded credentials replaced with environment variables",
+    "partial_table_updates": "✅ Some table names updated to automation.cre_*"
+  },
+  "remaining_table_updates": {
+    "description": "All Supabase table references must include 'automation.' schema prefix",
+    "files_with_remaining_updates": [
+      "00-master-orchestrator.json - Log Intake Completion node",
+      "00-master-orchestrator.json - Log Completion node",
+      "01-property-intake.json - Save Property to Supabase node",
+      "02-municipal-records-agent.json - Save Document node",
+      "03-title-records-agent.json - Save Document node",
+      "04-data-compilation-analysis.json - Load Documents node",
+      "04-data-compilation-analysis.json - Save Analysis node",
+      "05-report-generation.json - Load Analysis node (line 24)",
+      "05-report-generation.json - Load Property Data node (line 62)",
+      "05-report-generation.json - Update Property Status node (line 167)"
+    ],
+    "changes_needed": {
+      "pattern": "Change 'table': 'cre_*' to 'table': 'automation.cre_*'",
+      "also_update_structure": "Ensure using dataMode + fieldsUi for inserts/updates"
+    }
+  },
+  "manual_updates_required": {
+    "note": "Files may have been modified by parallel processes",
+    "recommendation": "Re-read each file and apply updates individually",
+    "files_to_manually_update": [
+      {
+        "file": "00-master-orchestrator.json",
+        "node": "Log Intake Completion",
+        "line_approx": 71,
+        "current": "table: 'cre_workflow_logs'",
+        "change_to": "table: 'automation.cre_workflow_logs'"
+      },
+      {
+        "file": "00-master-orchestrator.json",
+        "node": "Log Completion",
+        "line_approx": 235,
+        "current": "table: 'cre_workflow_logs'",
+        "change_to": "table: 'automation.cre_workflow_logs'"
+      }
+    ]
+  },
+  "verification_query": "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = 'automation' AND table_name LIKE 'cre_%' ORDER BY table_name",
+  "correct_table_names": [
+    "automation.cre_properties",
+    "automation.cre_documents",
+    "automation.cre_property_analysis",
+    "automation.cre_workflow_logs",
+    "automation.cre_agent_performance"
+  ]
+}
+

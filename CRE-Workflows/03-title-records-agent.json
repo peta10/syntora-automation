@@ -1,0 +1,314 @@
+{
+  "name": "Title Records Agent - Optimized",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "property_id",
+              "type": "string"
+            },
+            {
+              "name": "property_address",
+              "type": "string"
+            },
+            {
+              "name": "recorder_url",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize agent context for title records\nconst input = $json;\nconst startTime = Date.now();\nconst costs = { firecrawl: 0, openrouter: 0, total: 0 };\n\nreturn [{\n  json: {\n    property_id: input.property_id,\n    property_address: input.property_address,\n    recorder_url: input.recorder_url,\n    email: input.email,\n    start_time: startTime,\n    costs: costs,\n    documents_retrieved: [],\n    agent_context: `You are a CRE research agent specializing in title and deed records. Your task is to retrieve:\n1. Deed records (current and historical)\n2. UCC filings\n3. Ownership chain\n4. Liens and encumbrances\n\nProperty: ${input.property_address}\nRecorder URL: ${input.recorder_url}\n\nUse search to find deed records, then scrape specific documents.`\n  }\n}];"
+      },
+      "id": "init-context",
+      "name": "Initialize Agent Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxIterations": 10,
+          "systemMessage": "={{ $json.agent_context }}"
+        }
+      },
+      "id": "agent",
+      "name": "Title Records Agent",
+      "type": "n8n-nodes-base.agent",
+      "typeVersion": 1.8,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "openrouter",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [850, 400],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Search_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02a-firecrawl-search-tool"
+        },
+        "description": "Search recorder's office for deed records and UCC filings.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "query",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "url",
+              "type": "string",
+              "required": true
+            }
+          ],
+          "values": {
+            "query": "={{ $fromAI('query', '', 'string') }}",
+            "url": "={{ $json.recorder_url }}"
+          }
+        }
+      },
+      "id": "firecrawl-search-tool",
+      "name": "Firecrawl Search Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Scrape_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02b-firecrawl-scrape-tool"
+        },
+        "description": "Scrape specific deed or UCC filing documents.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "url",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "document_type",
+              "type": "string",
+              "required": false
+            }
+          ],
+          "values": {
+            "url": "={{ $fromAI('url', '', 'string') }}",
+            "document_type": "={{ $fromAI('document_type', 'deed', 'string') }}"
+          }
+        }
+      },
+      "id": "firecrawl-scrape-tool",
+      "name": "Firecrawl Scrape Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process and extract title data (similar to municipal)\nconst agentOutput = $json.output || $json.text || '';\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst extractionPrompt = `Extract structured title/deed data. Return JSON:\n{\n  \"document_type\": \"deed|ucc_filing|lien\",\n  \"owner_name\": string,\n  \"deed_date\": string,\n  \"deed_type\": string,\n  \"grantor\": string,\n  \"grantee\": string,\n  \"ucc_filing_number\": string or null,\n  \"lien_amount\": number or null,\n  \"confidence_score\": number (0-1),\n  \"extracted_data\": object\n}\n\nText: ${agentOutput.substring(0, 3000)}`;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    extraction_prompt: extractionPrompt,\n    needs_extraction: true\n  }\n}];"
+      },
+      "id": "process-output",
+      "name": "Process Agent Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Extract structured title/deed data. Return valid JSON only."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.extraction_prompt }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        }
+      },
+      "id": "extract-data",
+      "name": "Extract Structured Data",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [1450, 400],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and save (similar to municipal)\nconst extractedData = JSON.parse($json.output || $json.text || '{}');\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst startTime = $('Initialize Agent Context').item.json.start_time;\n\nif (!extractedData.document_type || extractedData.confidence_score < 0.5) {\n  return [{ json: { skip: true } }];\n}\n\nconst costs = $('Initialize Agent Context').item.json.costs;\ncosts.firecrawl += 0.01;\ncosts.openrouter += 0.002;\ncosts.total = costs.firecrawl + costs.openrouter;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    document_type: extractedData.document_type,\n    document_category: 'title',\n    source: 'agent_retrieval',\n    extracted_data: extractedData.extracted_data || extractedData,\n    confidence_score: extractedData.confidence_score,\n    status: extractedData.confidence_score >= 0.7 ? 'validated' : 'needs_review',\n    costs: costs,\n    execution_time_ms: Date.now() - startTime\n  }\n}];"
+      },
+      "id": "validate-save",
+      "name": "Validate & Prepare Save",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_documents",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "property_id": "={{ $json.property_id }}",
+            "document_type": "={{ $json.document_type }}",
+            "document_category": "={{ $json.document_category }}",
+            "source": "={{ $json.source }}",
+            "extracted_data": "={{ $json.extracted_data }}",
+            "status": "={{ $json.status }}",
+            "retrieved_at": "={{ $now }}"
+          }
+        }
+      },
+      "id": "save-document",
+      "name": "Save Document",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1850, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate results\nconst allItems = $input.all();\nconst documents = allItems.filter(i => !i.json.skip).map(i => i.json.document_type);\nconst totalCosts = allItems.reduce((acc, item) => {\n  if (item.json.costs) {\n    acc.firecrawl += item.json.costs.firecrawl || 0;\n    acc.openrouter += item.json.costs.openrouter || 0;\n  }\n  return acc;\n}, { firecrawl: 0, openrouter: 0, total: 0 });\n\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst startTime = $('Initialize Agent Context').item.json.start_time;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    status: 'success',\n    documents_retrieved: documents.length,\n    document_types: documents,\n    costs: totalCosts,\n    execution_time_ms: Date.now() - startTime,\n    branch: 'title'\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [2050, 400]
+    },
+    {
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [650, 600],
+      "parameters": {
+        "message": "={{ 'Title records agent failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Initialize Agent Context", "type": "main", "index": 0 }]]
+    },
+    "Initialize Agent Context": {
+      "main": [[{ "node": "Title Records Agent", "type": "main", "index": 0 }]]
+    },
+    "Title Records Agent": {
+      "main": [[{ "node": "OpenRouter Chat Model", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler", "type": "main", "index": 0 }]]
+    },
+    "OpenRouter Chat Model": {
+      "main": [[
+        { "node": "Firecrawl Search Tool", "type": "main", "index": 0 },
+        { "node": "Firecrawl Scrape Tool", "type": "main", "index": 0 }
+      ]]
+    },
+    "Firecrawl Search Tool": {
+      "main": [[{ "node": "Process Agent Output", "type": "main", "index": 0 }]]
+    },
+    "Firecrawl Scrape Tool": {
+      "main": [[{ "node": "Process Agent Output", "type": "main", "index": 0 }]]
+    },
+    "Process Agent Output": {
+      "main": [[{ "node": "Extract Structured Data", "type": "main", "index": 0 }]]
+    },
+    "Extract Structured Data": {
+      "main": [[{ "node": "Validate & Prepare Save", "type": "main", "index": 0 }]]
+    },
+    "Validate & Prepare Save": {
+      "main": [[{ "node": "Save Document", "type": "main", "index": 0 }]]
+    },
+    "Save Document": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "executionTimeout": 1200,
+    "maxExecutions": 1000,
+    "retryOnFail": true,
+    "retryCount": 2,
+    "retryDelay": 2000
+  },
+  "staticData": null,
+  "tags": ["cre", "agent", "title", "optimized"],
+  "triggerCount": 0,
+  "updatedAt": "2024-03-15T00:00:00.000Z",
+  "versionId": "2.0"
+}
+

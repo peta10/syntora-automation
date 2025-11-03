@@ -1,0 +1,106 @@
+{
+  "name": "Chicago Data Portal API Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "address",
+              "type": "string",
+              "description": "Property address in Chicago"
+            },
+            {
+              "name": "dataset_type",
+              "type": "string",
+              "description": "Type of data: permits, violations, or licenses"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Determine which Chicago Data Portal endpoint to use\nconst address = $json.address.toUpperCase(); // Chicago Data Portal uses uppercase\nconst datasetType = $json.dataset_type || 'violations';\n\nconst datasets = {\n  'permits': {\n    endpoint: 'https://data.cityofchicago.org/resource/ydr8-5enu.json',\n    filter: `?$where=address='${address}'&$limit=100`,\n    description: 'Building Permits'\n  },\n  'violations': {\n    endpoint: 'https://data.cityofchicago.org/resource/22u3-xenr.json',\n    filter: `?$where=address='${address}'&$limit=100`,\n    description: 'Building Violations'\n  },\n  'licenses': {\n    endpoint: 'https://data.cityofchicago.org/resource/r5kz-chrr.json',\n    filter: `?$where=address='${address}'&$limit=50`,\n    description: 'Business Licenses'\n  }\n};\n\nconst dataset = datasets[datasetType] || datasets['violations'];\n\nreturn [{\n  json: {\n    url: dataset.endpoint + dataset.filter,\n    dataset_type: datasetType,\n    dataset_description: dataset.description,\n    address: address\n  }\n}];"
+      },
+      "id": "prepare-api-call",
+      "name": "Prepare API Call",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.url}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "call-api",
+      "name": "Call Chicago Data Portal API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300],
+      "notes": "Chicago Data Portal provides free public API\nNo authentication required for basic use\nReturns structured JSON data"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process Chicago Data Portal API response\nconst response = $json; // Response is array of records\nconst datasetType = $('Prepare API Call').item.json.dataset_type;\nconst address = $('Prepare API Call').item.json.address;\n\n// Response is already an array of JSON objects\nconst records = Array.isArray(response) ? response : [response];\n\nlet processedData = {};\n\nif (datasetType === 'permits') {\n  processedData = {\n    total_permits: records.length,\n    permits: records.map(r => ({\n      permit_number: r.permit_ || r.id,\n      permit_type: r.permit_type,\n      work_description: r.work_description,\n      issue_date: r.issue_date,\n      status: r.status,\n      estimated_cost: parseFloat(r.estimated_cost || 0)\n    })),\n    total_estimated_cost: records.reduce((sum, r) => sum + parseFloat(r.estimated_cost || 0), 0)\n  };\n} else if (datasetType === 'violations') {\n  processedData = {\n    total_violations: records.length,\n    active_violations: records.filter(r => r.violation_status === 'OPEN').length,\n    violations: records.map(r => ({\n      violation_id: r.id,\n      violation_code: r.violation_code,\n      violation_description: r.violation_description,\n      violation_date: r.violation_date,\n      violation_status: r.violation_status,\n      inspector: r.inspector_id\n    }))\n  };\n} else if (datasetType === 'licenses') {\n  processedData = {\n    total_licenses: records.length,\n    licenses: records.map(r => ({\n      license_id: r.id,\n      license_type: r.license_description,\n      business_name: r.doing_business_as_name,\n      license_status: r.license_status,\n      issue_date: r.license_start_date\n    }))\n  };\n}\n\nreturn [{\n  json: {\n    operation: 'chicago_data_portal_api',\n    dataset_type: datasetType,\n    address: address,\n    records_found: records.length,\n    data: processedData,\n    success: true,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "process-response",
+      "name": "Process API Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [650, 500],
+      "parameters": {
+        "message": "={{ 'Chicago Data Portal API call failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Prepare API Call", "type": "main", "index": 0 }]]
+    },
+    "Prepare API Call": {
+      "main": [[{ "node": "Call Chicago Data Portal API", "type": "main", "index": 0 }]]
+    },
+    "Call Chicago Data Portal API": {
+      "main": [[{ "node": "Process API Response", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "retryOnFail": true,
+    "retryCount": 2,
+    "retryDelay": 2000
+  },
+  "staticData": null,
+  "tags": ["cre", "tool", "chicago", "api", "data-portal"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "1.0"
+}
+

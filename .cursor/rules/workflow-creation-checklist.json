@@ -1,0 +1,135 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "workflow_creation_master_checklist",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "n8n Workflow Automation",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "purpose": "Master checklist to prevent common workflow mistakes"
+  },
+  "before_creating_any_workflow": {
+    "step_1_identify_type": {
+      "question": "What type of workflow am I creating?",
+      "options": {
+        "tool_workflow": "Simple sub-workflow that performs a specific task (no agents)",
+        "agent_workflow": "Workflow with AI agent that orchestrates multiple tools",
+        "orchestrator_workflow": "Master workflow that calls other complete workflows",
+        "data_processing_workflow": "Standard workflow for data transformation/processing"
+      },
+      "action": "Refer to appropriate pattern guide based on type"
+    },
+    "step_2_check_existing_nodes": {
+      "question": "Do native n8n nodes exist for my integrations?",
+      "check_for": [
+        "Supabase → n8n-nodes-base.supabase (ALWAYS use native node)",
+        "OpenRouter/OpenAI → @n8n/n8n-nodes-langchain.lmChatOpenRouter (ALWAYS use LangChain node)",
+        "Google Drive → n8n-nodes-base.googleDrive (ALWAYS use native node)",
+        "Firecrawl → NO native node (use HTTP Request)",
+        "Custom APIs → Use HTTP Request"
+      ],
+      "critical": "NEVER use HTTP Request when native nodes exist"
+    },
+    "step_3_credentials": {
+      "rule": "ALL credentials MUST use environment variables",
+      "pattern": "{{$env.CREDENTIAL_NAME}}",
+      "never": "Hardcode credential IDs or API keys",
+      "checklist": [
+        "Supabase: {{$env.SUPABASE_CREDENTIAL_ID}}",
+        "OpenRouter: {{$env.OPENROUTER_CREDENTIAL_ID}}",
+        "Firecrawl: {{$env.FIRECRAWL_API_KEY}}",
+        "Google Drive: {{$env.GOOGLE_DRIVE_CREDENTIAL_ID}}",
+        "SMTP: {{$env.SMTP_CREDENTIAL_ID}}"
+      ]
+    },
+    "step_4_async_operations": {
+      "question": "Is this operation async (returns job ID for polling)?",
+      "if_yes": "Implement Wait → Poll → Check pattern",
+      "examples": {
+        "firecrawl_crawl": "Async - must poll for results",
+        "firecrawl_search": "Sync - returns immediate results",
+        "firecrawl_scrape": "Sync - returns immediate results",
+        "batch_processing": "Usually async - check API docs"
+      }
+    },
+    "step_5_error_handling": {
+      "rule": "Every node that can fail MUST have error handling",
+      "implementation": "Connect error output to Stop and Error node",
+      "error_message": "Descriptive message with context: 'Operation X failed: ' + error"
+    }
+  },
+  "node_selection_guide": {
+    "for_llm_calls": {
+      "always_use": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "never_use": "n8n-nodes-base.httpRequest to call LLM APIs",
+      "configuration": {
+        "model": "Select from list (gpt-4o, gpt-4o-mini, etc.)",
+        "messages": "Array with system and user messages",
+        "responseFormat": "json_object for JSON, text for markdown",
+        "temperature": "0.1-0.3 for deterministic, 0.7+ for creative",
+        "maxTokens": "2000-4000 depending on use case"
+      },
+      "credentials": "{{$env.OPENROUTER_CREDENTIAL_ID}}"
+    },
+    "for_database_operations": {
+      "supabase": {
+        "always_use": "n8n-nodes-base.supabase",
+        "never_use": "HTTP Request to Supabase API",
+        "operations": {
+          "select": "Use filterType: manual, conditions array",
+          "insert": "Use dataMode: defineBelow, fieldsUi structure",
+          "update": "Use filterType: manual, dataMode: defineBelow"
+        },
+        "credentials": "{{$env.SUPABASE_CREDENTIAL_ID}}"
+      }
+    },
+    "for_web_scraping": {
+      "firecrawl": {
+        "always_use": "n8n-nodes-base.httpRequest",
+        "never_use": "n8n-nodes-base.firecrawl community node",
+        "reason": "Community node may not be installed and can be outdated",
+        "endpoints": {
+          "search": "POST /v1/search (NO url parameter)",
+          "scrape": "POST /v1/scrape (WITH url parameter)",
+          "crawl": "POST /v1/crawl then poll (ASYNC)"
+        },
+        "authentication": "Bearer {{$env.FIRECRAWL_API_KEY}}"
+      }
+    },
+    "for_file_operations": {
+      "google_drive": {
+        "always_use": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "credentials": "{{$env.GOOGLE_DRIVE_CREDENTIAL_ID}}"
+      }
+    }
+  },
+  "agent_workflow_rules": {
+    "reference": "See .cursor/rules/agent-architecture.json for complete agent rules",
+    "quick_checklist": [
+      "Agent node: @n8n/n8n-nodes-langchain.agent",
+      "Language model: Connected via ai_languageModel",
+      "Tools: Connected via ai_tool",
+      "Memory: Connected via ai_memory (optional but recommended)",
+      "Agent output: Connected via main",
+      "NEVER: Call agent workflows as tools from another agent"
+    ]
+  },
+  "validation_before_commit": {
+    "credentials": "Search for hardcoded IDs (grep for 'your-' or 'id:.*abc')",
+    "http_vs_native": "Verify no HTTP Requests to APIs with native nodes",
+    "async_operations": "Verify async operations have polling implemented",
+    "error_handling": "Verify all critical nodes have error connections",
+    "agent_patterns": "Run validation script if workflow contains agents"
+  },
+  "quick_reference": {
+    "when_creating_tool_workflow": "Trigger → Process → Return (no agents)",
+    "when_creating_agent_workflow": "Trigger → Init → Agent ← LM ← Tools ← Memory → Process",
+    "when_creating_orchestrator": "Trigger → Init → Execute Workflow nodes → Process → Return",
+    "when_using_firecrawl": "HTTP Request with API endpoints (not community node)",
+    "when_using_supabase": "Native Supabase node with env credentials",
+    "when_using_llms": "LangChain nodes (not HTTP Request)",
+    "when_operation_is_async": "Implement polling pattern with Wait and If nodes"
+  }
+}
+

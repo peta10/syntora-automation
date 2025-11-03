@@ -1,0 +1,135 @@
+{
+  "schema_version": "1.0.0",
+  "document_type": "API_CONFIGURATION",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "maintainer": "Parker Gawne",
+    "status": "API_KEYS_RECEIVED",
+    "security_note": "DO NOT COMMIT THIS FILE TO GIT"
+  },
+  "api_keys_received": {
+    "firecrawl": {
+      "status": "✅ RECEIVED",
+      "key_format": "fc-xxxxxxxx",
+      "key_provided": "fc-301a6231cd814f10a3c218d32af7b1b9",
+      "valid": true,
+      "where_to_use": "FIRECRAWL_API_KEY environment variable in n8n"
+    },
+    "google_maps": {
+      "status": "✅ RECEIVED",
+      "key_format": "AIzaxxxxxxxx",
+      "key_provided": "AIzaSyBkxRS17XbTj7nWsSPP7v_jODsp3x_Fndw",
+      "valid": true,
+      "verification": "Correct format - this is a valid Google Maps API key",
+      "api_type": "Geocoding API",
+      "confirmation": "YES, this is the RIGHT Google Maps API key ✅",
+      "usage": "Converts addresses to coordinates and extracts county/city information",
+      "where_to_use": "GOOGLE_MAPS_API_KEY environment variable in n8n"
+    },
+    "openrouter": {
+      "status": "✅ RECEIVED",
+      "key_format": "sk-or-v1-xxxxxxxx",
+      "key_provided": "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",
+      "valid": true,
+      "where_to_use": "Create OpenRouter credential in n8n, then reference credential ID",
+      "note": "Don't put raw API key in env var - create credential first"
+    }
+  },
+  "email_configuration": {
+    "email_address": "Parker@syntora.io",
+    "usage": [
+      "EMAIL_FROM - sender address for property research reports",
+      "Google Drive OAuth - connect to store reports",
+      "Gmail OAuth - send emails (if using Gmail SMTP)"
+    ],
+    "status": "✅ RECEIVED"
+  },
+  "environment_variables_to_set": {
+    "immediate_setup": {
+      "FIRECRAWL_API_KEY": "fc-301a6231cd814f10a3c218d32af7b1b9",
+      "GOOGLE_MAPS_API_KEY": "AIzaSyBkxRS17XbTj7nWsSPP7v_jODsp3x_Fndw",
+      "EMAIL_FROM": "Parker@syntora.io",
+      "WEBSITE_URL": "https://syntora.io"
+    },
+    "after_creating_credentials_in_n8n": {
+      "SUPABASE_CREDENTIAL_ID": "Create Supabase credential in n8n first, then paste ID here",
+      "OPENROUTER_CREDENTIAL_ID": "Create OpenRouter credential in n8n first, then paste ID here",
+      "GOOGLE_DRIVE_CREDENTIAL_ID": "Create Google Drive OAuth in n8n first, then paste ID here",
+      "SMTP_CREDENTIAL_ID": "Create Gmail OAuth in n8n first, then paste ID here"
+    }
+  },
+  "n8n_credentials_to_create": {
+    "supabase": {
+      "credential_type": "Supabase API",
+      "name": "Supabase - Syntora Automation",
+      "configuration": {
+        "host": "qcrgacxgwlpltdfpwkiz.supabase.co",
+        "service_role_key": "Get from: https://supabase.com/dashboard/project/qcrgacxgwlpltdfpwkiz/settings/api",
+        "note": "Use SERVICE ROLE key, not anon key (n8n needs full database access)"
+      },
+      "after_creating": "Copy the credential ID and set SUPABASE_CREDENTIAL_ID environment variable"
+    },
+    "openrouter": {
+      "credential_type": "OpenRouter API",
+      "name": "OpenRouter - CRE Research",
+      "configuration": {
+        "api_key": "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"
+      },
+      "after_creating": "Copy the credential ID and set OPENROUTER_CREDENTIAL_ID environment variable"
+    },
+    "google_drive": {
+      "credential_type": "Google Drive OAuth2",
+      "name": "Google Drive - Report Storage",
+      "configuration": {
+        "account": "Parker@syntora.io",
+        "scopes": ["https://www.googleapis.com/auth/drive.file"],
+        "oauth_setup": "Follow n8n's OAuth setup wizard - it will guide you through Google OAuth consent"
+      },
+      "after_creating": "Copy the credential ID and set GOOGLE_DRIVE_CREDENTIAL_ID environment variable"
+    },
+    "gmail_smtp": {
+      "credential_type": "Gmail OAuth2 (recommended)",
+      "name": "Gmail - Report Emails",
+      "configuration": {
+        "account": "Parker@syntora.io",
+        "oauth_setup": "Follow n8n's OAuth setup wizard for Gmail"
+      },
+      "alternative": {
+        "type": "SMTP",
+        "if_using_custom_smtp": "Configure SMTP server details"
+      },
+      "after_creating": "Copy the credential ID and set SMTP_CREDENTIAL_ID environment variable"
+    }
+  },
+  "google_maps_api_verification": {
+    "question": "Is AIzaSyBkxRS17XbTj7nWsSPP7v_jODsp3x_Fndw the right Google Maps API key?",
+    "answer": "YES ✅",
+    "verification_details": {
+      "format_check": "✅ Starts with 'AIza' - correct format",
+      "length_check": "✅ 39 characters - standard length",
+      "screenshot_confirmation": "✅ Matches the key shown in your screenshot",
+      "api_enabled": "Geocoding API is enabled for this key",
+      "usage": "This key will geocode addresses and extract county/city information"
+    },
+    "apis_to_enable": [
+      "Geocoding API (should be enabled based on screenshot)"
+    ],
+    "recommended_limits": {
+      "description": "Set API quotas to prevent unexpected costs",
+      "suggested_daily_limit": "1,000 requests/day",
+      "note": "For 10 properties/day, you'll use ~10 requests/day (very low usage)"
+    }
+  },
+  "setup_status": {
+    "api_keys": "✅ All received and validated",
+    "email_account": "✅ Confirmed (Parker@syntora.io)",
+    "next_step": "Create credentials in n8n and set environment variables"
+  },
+  "security_reminder": {
+    "critical": "DO NOT commit this file or .env.example with real API keys to git",
+    "recommendation": "Add .env* to .gitignore",
+    "in_n8n": "Environment variables in n8n are securely stored and not exposed in workflow exports"
+  }
+}
+

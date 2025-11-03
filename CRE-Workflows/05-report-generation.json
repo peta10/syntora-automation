@@ -1,0 +1,448 @@
+{
+  "name": "Report Generation - Google Drive",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger-report",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_property_analysis",
+        "where": {
+          "property_id": "={{$json.property_id}}"
+        },
+        "options": {
+          "orderBy": {
+            "field": "generated_at",
+            "direction": "DESC"
+          },
+          "limit": 1
+        }
+      },
+      "id": "load-analysis",
+      "name": "Load Analysis from Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_properties",
+        "where": {
+          "id": "={{$json.property_id}}"
+        }
+      },
+      "id": "load-property",
+      "name": "Load Property Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge property and analysis data\nconst analysis = $('Load Analysis from Supabase').item.json.analysis_data;\nconst property = $('Load Property Data').item.json;\n\nreturn [{\n  json: {\n    property_id: property.id,\n    property_address: property.address,\n    property_city: property.city,\n    property_state: property.state,\n    property_type: property.property_type,\n    email: property.email || 'user@example.com',\n    analysis: analysis,\n    completeness_score: analysis.completeness_score || 100\n  }\n}];"
+      },
+      "id": "merge-data",
+      "name": "Merge Property & Analysis Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "{{$env.WEBSITE_URL}}"
+            },
+            {
+              "name": "X-Title",
+              "value": "CRE Property Research"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"You are a commercial real estate analyst creating professional property research reports. Format reports in markdown with clear sections, tables, and visual indicators.\"}, {\"role\": \"user\", \"content\": \"Create a comprehensive commercial property research report in markdown format.\\n\\nProperty Data:\\n{{JSON.stringify($json.analysis)}}\\n\\nProperty Details:\\n- Address: {{$json.property_address}}\\n- City: {{$json.property_city}}\\n- State: {{$json.property_state}}\\n- Type: {{$json.property_type}}\\n\\nInclude these sections:\\n\\n# Property Research Report\\n\\n## 1. Executive Summary\\n- Quick Facts Table (Assessed Value, Tax, Zoning, Square Feet, Owner)\\n- Recommendation: [PROCEED/REVIEW/WALK AWAY] based on data\\n- Key Findings (3-5 bullet points)\\n- Confidence Score: {{$json.completeness_score}}%\\n\\n## 2. Property Overview\\n- Address: {{$json.property_address}}\\n- Property Type: {{$json.property_type}}\\n- Square Feet: {{$json.analysis.summary.assessment.square_feet}}\\n- Lot Size: {{$json.analysis.summary.assessment.lot_size}}\\n- Year Built: {{$json.analysis.summary.assessment.year_built}}\\n- Current Owner: {{$json.analysis.summary.ownership.current_owner}}\\n\\n## 3. Assessment & Financial\\n### Property Valuation\\n| Metric | Value |\\n|--------|-------|\\n| Assessed Value | ${{$json.analysis.summary.assessment.assessed_value?.toLocaleString()}} |\\n| Market Value | ${{$json.analysis.summary.assessment.market_value?.toLocaleString()}} |\\n\\n### Property Taxes\\n| Metric | Value |\\n|--------|-------|\\n| Annual Tax | ${{$json.analysis.summary.financial.annual_tax?.toLocaleString()}} |\\n| Tax Year | {{$json.analysis.summary.financial.tax_year}} |\\n| Payment Status | {{$json.analysis.summary.financial.payment_status}} |\\n\\n## 4. Zoning & Compliance\\n### Zoning Information\\n- Zoning Code: {{$json.analysis.summary.zoning.code}}\\n- Description: {{$json.analysis.summary.zoning.description}}\\n- Permitted Uses: {{$json.analysis.summary.zoning.permitted_uses?.join(', ')}}\\n\\n### Compliance Status\\n- Code Violations: {{$json.analysis.summary.compliance.active_violations}} Active\\n- Total Liens: ${{$json.analysis.summary.compliance.total_liens?.toLocaleString()}}\\n- Building Permits: {{$json.analysis.summary.compliance.permit_count}} Recent\\n\\n## 5. Ownership & Title\\n- Current Owner: {{$json.analysis.summary.ownership.current_owner}}\\n- Owner Type: {{$json.analysis.summary.ownership.owner_type}}\\n- Title Status: Clear Title\\n\\n## 6. Risk Analysis\\n### Red Flags\\n{{#if $json.analysis.red_flags.length}}\\n{{#each $json.analysis.red_flags}}\\n- ❌ {{this}}\\n{{/each}}\\n{{else}}\\n- ✅ None identified\\n{{/if}}\\n\\n### Concerns\\n{{#each $json.analysis.concerns}}\\n- ⚠️ {{this}}\\n{{/each}}\\n\\n### Strengths\\n{{#each $json.analysis.strengths}}\\n- ✅ {{this}}\\n{{/each}}\\n\\n## 7. Recommendations\\n### Next Steps\\n{{#each $json.analysis.recommendations}}\\n{{@index}}. {{this}}\\n{{/each}}\\n\\n### Decision Support\\n- Overall Assessment: {{$json.analysis.overall_assessment}}\\n- Confidence Level: {{$json.completeness_score}}%\\n- Risk Level: {{$json.analysis.metrics.risk_level}}\\n\\n## 8. Appendix: Document Checklist\\n- ✅ Property Tax Records\\n- ✅ Zoning Certificate\\n- ✅ Building Permits\\n- ✅ Code Violations\\n- ✅ Lien Records\\n- ✅ Ownership Information\\n- ✅ Property Assessment\\n- ✅ Deed Records\\n- ✅ UCC Filings\\n\\nFormatting Requirements:\\n- Use markdown tables for structured data\\n- Use ✅ for positive/complete items\\n- Use ⚠️ for warnings/needs attention\\n- Use ❌ for critical issues\\n- Use proper markdown headers (# ## ###)\\n- Add spacing for readability\\n- Format numbers with commas ($2,000,000)\\n- Make it professional and easy to scan\\n\\nReturn ONLY the markdown report, no additional text or explanations.\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"text\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-markdown",
+      "name": "Generate Markdown Report (OpenRouter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract markdown from LLM response\nconst llmResponse = $json.choices[0].message.content;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\n\nreturn [{\n  json: {\n    markdown: llmResponse,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email\n  }\n}];"
+      },
+      "id": "extract-markdown",
+      "name": "Extract Markdown from LLM",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Convert markdown to styled HTML\nconst markdown = $json.markdown;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\n\n// Enhanced markdown to HTML conversion\nlet html = markdown\n  .replace(/^# (.+)$/gm, '<h1>$1</h1>')\n  .replace(/^## (.+)$/gm, '<h2>$1</h2>')\n  .replace(/^### (.+)$/gm, '<h3>$1</h3>')\n  .replace(/^\\| (.+) \\|$/gm, '<tr><td>$1</td></tr>')\n  .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')\n  .replace(/\\*(.+?)\\*/g, '<em>$1</em>')\n  .replace(/✅/g, '<span class=\"good\">✅</span>')\n  .replace(/⚠️/g, '<span class=\"warning\">⚠️</span>')\n  .replace(/❌/g, '<span class=\"critical\">❌</span>')\n  .replace(/\\n\\n/g, '</p><p>')\n  .replace(/\\n/g, '<br>');\n\nconst styledHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body {\n      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n      line-height: 1.6;\n      color: #333;\n      max-width: 800px;\n      margin: 0 auto;\n      padding: 40px 20px;\n      background-color: #f5f5f5;\n    }\n    .container {\n      background-color: white;\n      padding: 40px;\n      border-radius: 8px;\n      box-shadow: 0 2px 4px rgba(0,0,0,0.1);\n    }\n    h1 {\n      color: #2c3e50;\n      border-bottom: 3px solid #3498db;\n      padding-bottom: 15px;\n      margin-bottom: 30px;\n    }\n    h2 {\n      color: #34495e;\n      margin-top: 40px;\n      margin-bottom: 20px;\n      border-left: 4px solid #3498db;\n      padding-left: 15px;\n    }\n    h3 {\n      color: #555;\n      margin-top: 25px;\n      margin-bottom: 15px;\n    }\n    table {\n      width: 100%;\n      border-collapse: collapse;\n      margin: 20px 0;\n      background-color: white;\n    }\n    table, th, td {\n      border: 1px solid #ddd;\n    }\n    th {\n      background-color: #3498db;\n      color: white;\n      padding: 12px;\n      text-align: left;\n      font-weight: 600;\n    }\n    td {\n      padding: 10px 12px;\n    }\n    tr:nth-child(even) {\n      background-color: #f9f9f9;\n    }\n    .good {\n      color: #27ae60;\n      font-weight: bold;\n    }\n    .warning {\n      color: #f39c12;\n      font-weight: bold;\n    }\n    .critical {\n      color: #e74c3c;\n      font-weight: bold;\n    }\n    .summary-box {\n      background-color: #ecf0f1;\n      border-left: 4px solid #3498db;\n      padding: 15px;\n      margin: 20px 0;\n    }\n    p {\n      margin: 10px 0;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    ${html}\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    html: styledHtml,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email\n  }\n}];"
+      },
+      "id": "convert-html",
+      "name": "Convert Markdown to HTML",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.html2pdf.app/v1/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.HTML2PDF_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "html",
+              "value": "={{$json.html}}"
+            },
+            {
+              "name": "pdf",
+              "value": "{\"format\": \"A4\", \"orientation\": \"portrait\"}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "convert-pdf",
+      "name": "Convert HTML to PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Get current date for folder structure\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = now.toLocaleString('default', { month: 'long' });\nconst propertyData = $('Merge Property & Analysis Data').item.json;\nconst addressSlug = propertyData.property_address.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);\n\nreturn [{\n  json: {\n    pdf_buffer: $json.pdf,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email,\n    folder_path: `Property Research Reports/${year}/${month}`,\n    filename: `Property_Research_${propertyData.property_id}_${addressSlug}_${now.toISOString().split('T')[0]}.pdf`\n  }\n}];"
+      },
+      "id": "format-pdf",
+      "name": "Format PDF Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "={{$json.filename}}",
+        "binaryData": true,
+        "parents": {
+          "mode": "list",
+          "value": "={{$json.folder_path}}"
+        },
+        "options": {
+          "appProperties": {
+            "property": [
+              {
+                "key": "property_id",
+                "value": "={{$json.property_id}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "upload-drive",
+      "name": "Upload PDF to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [1850, 400],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "{{$env.GOOGLE_DRIVE_CREDENTIAL_ID}}",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "cre_properties",
+        "where": {
+          "id": "={{$json.property_id}}"
+        },
+        "fields": {
+          "status": "complete",
+          "completed_at": "={{$now}}"
+        }
+      },
+      "id": "update-status",
+      "name": "Update Property Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2050, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format email and response\nconst driveData = $('Upload PDF to Google Drive').item.json;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\nconst analysis = propertyData.analysis;\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id,\n    report_url: driveData.webViewLink || driveData.webContentLink,\n    report_id: driveData.id,\n    email: propertyData.email,\n    property_address: propertyData.property_address,\n    email_subject: `Property Research Complete - ${propertyData.property_address}`,\n    email_body: `Hi,\\n\\nYour property research is complete!\\n\\nProperty: ${propertyData.property_address}\\n\\n📊 Quick Summary:\\n• Assessed Value: $${analysis.summary.assessment.assessed_value?.toLocaleString() || 'N/A'}\\n• Annual Tax: $${analysis.summary.financial.annual_tax?.toLocaleString() || 'N/A'}\\n• Zoning: ${analysis.summary.zoning.code || 'N/A'}\\n• Status: ${analysis.completeness_score || 100}% Complete\\n\\n📎 Download Full Report:\\n${driveData.webViewLink || driveData.webContentLink}\\n\\nNext Steps:\\n${analysis.recommendations?.map(r => `• ${r}`).join('\\n') || 'Review the report for details.'}\\n\\nBest regards,\\nProperty Research System`,\n    email_sent: false\n  }\n}];"
+      },
+      "id": "format-email",
+      "name": "Format Email Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2250, 400]
+    },
+    {
+      "parameters": {
+        "to": "={{$json.email}}",
+        "subject": "={{$json.email_subject}}",
+        "emailType": "html",
+        "html": "={{$json.email_body}}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email to User",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return final results\nconst emailData = $('Format Email Data').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    property_id: emailData.property_id,\n    report_url: emailData.report_url,\n    report_id: emailData.report_id,\n    email_sent: true,\n    completed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "return-results",
+      "name": "Return Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2650, 400]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load Analysis from Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Property Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Analysis from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Merge Property & Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Property Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Property & Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Property & Analysis Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Markdown Report (OpenRouter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Markdown Report (OpenRouter)": {
+      "main": [
+        [
+          {
+            "node": "Extract Markdown from LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Markdown from LLM": {
+      "main": [
+        [
+          {
+            "node": "Convert Markdown to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Markdown to HTML": {
+      "main": [
+        [
+          {
+            "node": "Convert HTML to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert HTML to PDF": {
+      "main": [
+        [
+          {
+            "node": "Format PDF Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PDF Data": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Update Property Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Property Status": {
+      "main": [
+        [
+          {
+            "node": "Format Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to User": {
+      "main": [
+        [
+          {
+            "node": "Return Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["cre", "report", "google-drive"],
+  "triggerCount": 0,
+  "updatedAt": "2024-03-15T00:00:00.000Z",
+  "versionId": "1"
+}
+

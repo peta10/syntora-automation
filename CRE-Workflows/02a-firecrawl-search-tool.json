@@ -1,0 +1,94 @@
+{
+  "name": "Firecrawl Search Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string"
+            },
+            {
+              "name": "url",
+              "type": "string"
+            },
+            {
+              "name": "property_address",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "query": "={{ $json.query }}",
+        "url": "={{ $json.url }}",
+        "options": {
+          "limit": 10,
+          "format": "markdown"
+        }
+      },
+      "id": "firecrawl-search",
+      "name": "Firecrawl Search",
+      "type": "n8n-nodes-base.firecrawl",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "firecrawlApi": {
+          "id": "{{$env.FIRECRAWL_CREDENTIAL_ID}}",
+          "name": "Firecrawl"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process search results\nconst results = $json.data || [];\nconst query = $('When Executed by Another Workflow').item.json.query;\n\nreturn [{\n  json: {\n    operation: 'search',\n    query: query,\n    results_count: results.length,\n    results: results.map(r => ({\n      url: r.url,\n      title: r.title,\n      description: r.description,\n      content_preview: r.content?.substring(0, 500)\n    })),\n    success: true\n  }\n}];"
+      },
+      "id": "process-results",
+      "name": "Process Search Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "parameters": {
+        "message": "={{ 'Firecrawl search failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Firecrawl Search", "type": "main", "index": 0 }]]
+    },
+    "Firecrawl Search": {
+      "main": [[{ "node": "Process Search Results", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "retryOnFail": true,
+    "retryCount": 2,
+    "retryDelay": 1000
+  },
+  "staticData": null,
+  "tags": ["cre", "tool", "firecrawl"],
+  "triggerCount": 0,
+  "updatedAt": "2024-03-15T00:00:00.000Z",
+  "versionId": "1.0"
+}
+

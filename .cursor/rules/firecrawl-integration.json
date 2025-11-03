@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "firecrawl_integration_pattern",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "n8n Workflow Automation",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": ["all_firecrawl_integrations", "web_scraping_workflows"]
+  },
+  "documentation_source": "https://www.firecrawl.dev/blog/firecrawl-n8n-web-automation",
+  "critical_rules": {
+    "never_use_community_node": {
+      "rule": "NEVER use n8n-nodes-base.firecrawl community node - it may not be installed and is often outdated",
+      "always_use": "n8n-nodes-base.httpRequest with Firecrawl API directly",
+      "reason": "HTTP Request provides full API access, better error handling, and works in all n8n environments"
+    },
+    "firecrawl_api_version": {
+      "current_version": "v1",
+      "base_url": "https://api.firecrawl.dev/v1",
+      "authentication": "Bearer token in Authorization header"
+    }
+  },
+  "firecrawl_endpoints": {
+    "search": {
+      "url": "https://api.firecrawl.dev/v1/search",
+      "method": "POST",
+      "authentication": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+      "request_body": {
+        "query": "string (REQUIRED) - search query to find pages",
+        "pageOptions": "object (optional) - { limit: number }",
+        "searchOptions": "object (optional) - { limit: number }"
+      },
+      "critical_notes": [
+        "DOES NOT take 'url' parameter - searches entire web",
+        "Use 'scrape' endpoint if you have a specific URL",
+        "Returns array of search results with URLs and content"
+      ],
+      "response": {
+        "success": "boolean",
+        "data": "array of { url, title, description, markdown, content }"
+      },
+      "common_mistakes": [
+        "Passing 'url' parameter to search (WRONG - search is web-wide)",
+        "Expecting synchronous results (correct - search is synchronous)",
+        "Using community node instead of HTTP Request"
+      ]
+    },
+    "scrape": {
+      "url": "https://api.firecrawl.dev/v1/scrape",
+      "method": "POST",
+      "authentication": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+      "request_body": {
+        "url": "string (REQUIRED) - URL to scrape",
+        "formats": "array (optional) - ['markdown', 'html', 'links']",
+        "onlyMainContent": "boolean (optional) - extract only main content",
+        "includeTags": "array (optional) - HTML tags to include",
+        "excludeTags": "array (optional) - HTML tags to exclude ['script', 'style', 'noscript', 'iframe', 'nav', 'footer']",
+        "waitFor": "number (optional) - milliseconds to wait for page load"
+      },
+      "response": {
+        "success": "boolean",
+        "data": "{ markdown, html, content, metadata }"
+      },
+      "common_mistakes": [
+        "Using outdated parameter names",
+        "Not handling response.data structure",
+        "Missing error handling for invalid URLs"
+      ]
+    },
+    "crawl": {
+      "url": "https://api.firecrawl.dev/v1/crawl",
+      "method": "POST",
+      "authentication": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+      "async_operation": true,
+      "request_body": {
+        "url": "string (REQUIRED) - starting URL to crawl",
+        "limit": "number (optional) - max pages to crawl, default 10",
+        "scrapeOptions": "object (optional) - same as scrape endpoint options"
+      },
+      "response_initial": {
+        "id": "string - job ID for polling",
+        "url": "string - starting URL"
+      },
+      "polling": {
+        "url": "https://api.firecrawl.dev/v1/crawl/{job_id}",
+        "method": "GET",
+        "check_interval": "5 seconds recommended",
+        "status_field": "status",
+        "status_values": ["scraping", "completed", "failed"]
+      },
+      "implementation_pattern": {
+        "step_1": "POST to /v1/crawl - returns job ID",
+        "step_2": "Wait 5 seconds (use Wait node)",
+        "step_3": "GET /v1/crawl/{job_id} - check status",
+        "step_4": "If status != 'completed', wait and retry step 3",
+        "step_5": "When status == 'completed', extract data from response"
+      },
+      "critical_notes": [
+        "ASYNC OPERATION - never expect immediate results",
+        "MUST implement polling loop with Wait nodes",
+        "Use If node to check completion status",
+        "Set workflow timeout appropriately (5-10 minutes)"
+      ],
+      "common_mistakes": [
+        "Treating crawl as synchronous operation (CRITICAL ERROR)",
+        "Not implementing polling/wait pattern",
+        "No timeout handling",
+        "Using community node which doesn't handle async properly"
+      ]
+    }
+  },
+  "required_http_request_configuration": {
+    "node_type": "n8n-nodes-base.httpRequest",
+    "typeVersion": "4.2 or higher",
+    "authentication": {
+      "type": "genericCredentialType",
+      "genericAuthType": "httpHeaderAuth",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{$env.FIRECRAWL_API_KEY}}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    "body_configuration": {
+      "sendBody": true,
+      "specifyBody": "json",
+      "jsonBody": "={{ JSON.stringify({ ...params }) }}"
+    },
+    "error_handling": {
+      "always_add": "Error connection to Error Handler node",
+      "retry_logic": {
+        "retryOnFail": true,
+        "retryCount": 2,
+        "retryDelay": 2000
+      }
+    }
+  },
+  "tool_workflow_structure": {
+    "description": "Correct structure for Firecrawl tool workflows used by agents",
+    "required_nodes": [
+      "Execute Workflow Trigger (with workflowInputs defined)",
+      "HTTP Request (Firecrawl API call)",
+      "Function (Process results)",
+      "Error Handler (Stop and Error node)"
+    ],
+    "example_search_tool": {
+      "trigger": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string",
+              "description": "Search query"
+            }
+          ]
+        }
+      },
+      "http_request": {
+        "url": "https://api.firecrawl.dev/v1/search",
+        "jsonBody": "={{ JSON.stringify({ query: $json.query, pageOptions: { limit: 10 } }) }}"
+      },
+      "process": "Extract and format response.data array"
+    }
+  },
+  "environment_variables_required": {
+    "FIRECRAWL_API_KEY": {
+      "description": "Firecrawl API authentication key",
+      "where_to_get": "https://firecrawl.dev/",
+      "usage": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+      "critical": true
+    }
+  },
+  "common_errors_and_fixes": {
+    "error_1_url_on_search": {
+      "error": "Passing 'url' parameter to /v1/search endpoint",
+      "symptom": "Search returns empty or error",
+      "fix": "Remove 'url' parameter - search is web-wide. If you have a specific URL, use /v1/scrape instead",
+      "correct_params": "Only 'query' parameter required"
+    },
+    "error_2_synchronous_crawl": {
+      "error": "Expecting immediate results from /v1/crawl",
+      "symptom": "Workflow hangs or returns incomplete data",
+      "fix": "Implement async pattern: POST crawl → Wait → GET status → Check completion → Wait/Process",
+      "required_nodes": ["HTTP Request (start)", "Wait", "HTTP Request (poll)", "If (check status)", "Function (process)"]
+    },
+    "error_3_wrong_response_structure": {
+      "error": "Accessing $json.results instead of $json.data",
+      "symptom": "Empty results or undefined errors",
+      "fix": "Firecrawl returns { success, data }, always access $json.data for results"
+    },
+    "error_4_community_node": {
+      "error": "Using n8n-nodes-base.firecrawl node",
+      "symptom": "Node not found or parameters don't match",
+      "fix": "Replace with HTTP Request node using patterns above"
+    }
+  },
+  "validation_checklist": {
+    "before_creating_firecrawl_workflow": [
+      "Are you using HTTP Request node (not community node)?",
+      "Is authentication using Bearer token from environment variable?",
+      "For search: Are you NOT passing a 'url' parameter?",
+      "For scrape: Are you passing a specific 'url' parameter?",
+      "For crawl: Have you implemented async polling pattern?",
+      "Is error handling connected?",
+      "Are retry settings configured?"
+    ]
+  },
+  "examples": {
+    "correct_search_http_request": {
+      "type": "n8n-nodes-base.httpRequest",
+      "method": "POST",
+      "url": "https://api.firecrawl.dev/v1/search",
+      "headers": {
+        "Authorization": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+        "Content-Type": "application/json"
+      },
+      "jsonBody": "={{ JSON.stringify({ query: $json.query, pageOptions: { limit: 10 } }) }}"
+    },
+    "correct_scrape_http_request": {
+      "type": "n8n-nodes-base.httpRequest",
+      "method": "POST",
+      "url": "https://api.firecrawl.dev/v1/scrape",
+      "headers": {
+        "Authorization": "Bearer {{$env.FIRECRAWL_API_KEY}}",
+        "Content-Type": "application/json"
+      },
+      "jsonBody": "={{ JSON.stringify({ url: $json.url, formats: ['markdown'], onlyMainContent: true }) }}"
+    }
+  }
+}
+

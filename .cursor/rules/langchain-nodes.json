@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "langchain_nodes_pattern",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "n8n Workflow Automation",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": ["all_ai_workflows", "llm_integrations"]
+  },
+  "documentation_source": "https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenrouter/",
+  "critical_rules": {
+    "never_use_manual_http_for_llms": {
+      "rule": "NEVER use manual HTTP Request nodes to call LLM APIs - ALWAYS use LangChain nodes",
+      "deprecated_pattern": "HTTP Request → https://openrouter.ai/api/v1/chat/completions",
+      "correct_pattern": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "reasons": [
+        "LangChain nodes have built-in credential management",
+        "Automatic retry logic and error handling",
+        "Streaming support",
+        "Consistent interface with other AI nodes",
+        "No manual JSON construction",
+        "Better debugging and logging",
+        "Compatible with agent and chain nodes"
+      ]
+    },
+    "connection_types": {
+      "ai_languageModel": "Use when connecting LM to Agent or Chain nodes",
+      "main": "NEVER connect language models via main to other nodes - breaks AI patterns"
+    }
+  },
+  "langchain_openrouter_node": {
+    "node_type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "typeVersion": "1.2 or higher",
+    "use_cases": [
+      "When building AI agents",
+      "When creating AI chains",
+      "When you need LLM analysis in workflows",
+      "When extracting data with AI",
+      "When generating content with AI"
+    ],
+    "configuration": {
+      "model": {
+        "__rl": true,
+        "mode": "list",
+        "value": "openai/gpt-4o-mini or openai/gpt-4o"
+      },
+      "messages": {
+        "values": [
+          {
+            "role": "system",
+            "content": "System instructions for the AI"
+          },
+          {
+            "role": "user",
+            "content": "={{$json.prompt or user message}}"
+          }
+        ]
+      },
+      "options": {
+        "temperature": "0.3 for deterministic, 0.7 for creative",
+        "maxTokens": "2000-4000 depending on use case",
+        "responseFormat": {
+          "type": "json_object for JSON output, text for markdown/plain text"
+        }
+      }
+    },
+    "credentials": {
+      "type": "openRouterApi",
+      "reference": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+      "never_hardcode": true
+    }
+  },
+  "when_to_use_langchain_vs_http": {
+    "use_langchain_nodes": [
+      "When calling OpenRouter, OpenAI, Anthropic, or other LLM providers",
+      "When building AI agents",
+      "When using AI chains",
+      "When you want automatic retry and error handling",
+      "When you need streaming responses",
+      "When integrating with other LangChain components"
+    ],
+    "use_http_request": [
+      "When calling non-LLM APIs (Firecrawl, custom APIs, etc.)",
+      "When the API doesn't have a native n8n node",
+      "When you need custom headers or authentication not supported by nodes",
+      "NEVER for LLM APIs - use LangChain nodes instead"
+    ]
+  },
+  "common_mistakes": {
+    "mistake_1_manual_llm_http": {
+      "description": "Using HTTP Request to call OpenRouter/OpenAI APIs",
+      "wrong": {
+        "node_type": "n8n-nodes-base.httpRequest",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "body": "Manual JSON construction with messages array"
+      },
+      "correct": {
+        "node_type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "messages": "Use messages parameter",
+        "model": "Select from list"
+      },
+      "impact": "No retry logic, manual error handling, harder to maintain, can't use with agents"
+    },
+    "mistake_2_wrong_response_format": {
+      "description": "Not specifying responseFormat for JSON output",
+      "issue": "LLM returns markdown-wrapped JSON instead of pure JSON",
+      "fix": "options: { responseFormat: { type: 'json_object' } }",
+      "when_to_use": "Always use when you need JSON output for parsing"
+    },
+    "mistake_3_no_system_message": {
+      "description": "Not providing system message for AI context",
+      "fix": "Always add system message in messages array",
+      "example": "{ role: 'system', content: 'You are a ... Return only JSON.' }"
+    },
+    "mistake_4_hardcoded_credentials": {
+      "description": "Hardcoding OpenRouter credential ID",
+      "fix": "Use {{$env.OPENROUTER_CREDENTIAL_ID}}"
+    }
+  },
+  "response_handling": {
+    "langchain_node_output": {
+      "structure": "{ message: { content: 'response text' } } or { content: 'response text' }",
+      "access_content": "$json.message?.content || $json.content",
+      "json_parsing": "If responseFormat is json_object, parse with JSON.parse($json.message.content)"
+    }
+  },
+  "environment_variables_required": {
+    "OPENROUTER_CREDENTIAL_ID": {
+      "description": "n8n credential ID for OpenRouter connection",
+      "type": "string",
+      "required": true,
+      "usage": "{{$env.OPENROUTER_CREDENTIAL_ID}}"
+    },
+    "OPENROUTER_API_KEY": {
+      "description": "OpenRouter API key (only if using HTTP Request - NOT RECOMMENDED)",
+      "type": "string",
+      "usage": "Only for HTTP requests - prefer using credential ID with LangChain nodes"
+    }
+  },
+  "validation_checklist": {
+    "before_using_llm": [
+      "Are you using LangChain node (not HTTP Request)?",
+      "Is credential using environment variable?",
+      "Have you specified responseFormat if expecting JSON?",
+      "Have you added system message?",
+      "Is temperature set appropriately (0.1-0.3 for deterministic, 0.7+ for creative)?",
+      "Are maxTokens set to prevent runaway costs?"
+    ]
+  }
+}
+

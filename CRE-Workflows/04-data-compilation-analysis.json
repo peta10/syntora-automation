@@ -1,0 +1,247 @@
+{
+  "name": "Data Compilation & Analysis",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger-compilation",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_documents",
+        "where": {
+          "property_id": "={{$json.property_id}}"
+        }
+      },
+      "id": "load-documents",
+      "name": "Load All Documents from Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Compile summary from all documents\nconst documents = $input.all();\nconst propertyData = $('Execute Workflow Trigger').item.json;\n\n// Extract data by document type\nconst data = {\n  assessment: documents.find(d => d.json.document_type === 'assessment')?.json.extracted_data || null,\n  tax_record: documents.find(d => d.json.document_type === 'tax_record')?.json.extracted_data || null,\n  zoning: documents.find(d => d.json.document_type === 'zoning')?.json.extracted_data || null,\n  ownership: documents.find(d => d.json.document_type === 'ownership')?.json.extracted_data || null,\n  violations: documents.find(d => d.json.document_type === 'violations')?.json.extracted_data || null,\n  liens: documents.find(d => d.json.document_type === 'liens')?.json.extracted_data || null,\n  permits: documents.find(d => d.json.document_type === 'permits')?.json.extracted_data || null,\n  property_details: documents.find(d => d.json.document_type === 'property_details')?.json.extracted_data || null,\n  deed_records: documents.find(d => d.json.document_type === 'deed_records')?.json.extracted_data || null,\n  ucc_filings: documents.find(d => d.json.document_type === 'ucc_filings')?.json.extracted_data || null\n};\n\n// Generate summary\nconst summary = {\n  property: {\n    address: propertyData.formatted_address || propertyData.address,\n    city: propertyData.city,\n    state: propertyData.state,\n    county: propertyData.county\n  },\n  assessment: {\n    assessed_value: data.assessment?.assessed_value || null,\n    market_value: data.assessment?.market_value || null,\n    square_feet: data.property_details?.square_feet || data.assessment?.square_feet || null,\n    lot_size: data.property_details?.lot_size || data.assessment?.lot_size || null,\n    year_built: data.property_details?.year_built || data.assessment?.year_built || null\n  },\n  financial: {\n    annual_tax: data.tax_record?.tax_amount || null,\n    tax_rate: data.tax_record?.tax_rate || null,\n    tax_year: data.tax_record?.tax_year || null\n  },\n  zoning: {\n    code: data.zoning?.zoning_code || null,\n    description: data.zoning?.zoning_description || null,\n    permitted_uses: data.zoning?.permitted_uses || []\n  },\n  compliance: {\n    active_violations: data.violations?.active_violations || 0,\n    total_liens: data.liens?.total_lien_amount || 0,\n    permit_count: data.permits?.total_permits || 0\n  },\n  ownership: {\n    current_owner: data.ownership?.owner_name || data.deed_records?.current_owner || null,\n    owner_address: data.ownership?.owner_address || null,\n    owner_type: data.ownership?.owner_type || null\n  }\n};\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id,\n    summary: summary,\n    raw_data: data,\n    documents_retrieved: documents.length,\n    compiled_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "compile-summary",
+      "name": "Compile Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"You are a commercial real estate analyst. Analyze property data and identify red flags, concerns, and strengths.\"}, {\"role\": \"user\", \"content\": \"Analyze this property data and identify red flags and concerns. Return ONLY valid JSON with these fields: red_flags (array of strings - deal breakers), concerns (array of strings - need attention), strengths (array of strings - positive aspects), recommendations (array of strings - next steps), overall_assessment (string - PROCEED/REVIEW/WALK_AWAY).\\n\\nProperty Data:\\n{{JSON.stringify($json.summary)}}\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"json_object\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "identify-red-flags",
+      "name": "Identify Red Flags (OpenRouter LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Calculate property investment metrics based on available data. Return ONLY valid JSON with these fields: expense_ratio (number if calculable), estimated_cap_rate (number if estimable), property_age (number), risk_level (string - LOW/MEDIUM/HIGH), notes (array of strings with calculations).\\n\\nProperty Data:\\n{{JSON.stringify($json.summary)}}\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"json_object\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "calculate-metrics",
+      "name": "Calculate Metrics (OpenRouter LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Compile final analysis\nconst summaryData = $('Compile Summary').item.json;\nconst redFlags = JSON.parse($('Identify Red Flags (OpenRouter LLM)').json.choices[0].message.content);\nconst metrics = JSON.parse($('Calculate Metrics (OpenRouter LLM)').json.choices[0].message.content);\n\nreturn [{\n  json: {\n    property_id: summaryData.property_id,\n    summary: summaryData.summary,\n    red_flags: redFlags.red_flags || [],\n    concerns: redFlags.concerns || [],\n    strengths: redFlags.strengths || [],\n    recommendations: redFlags.recommendations || [],\n    overall_assessment: redFlags.overall_assessment || 'REVIEW',\n    metrics: metrics,\n    completeness_score: (summaryData.documents_retrieved / 10) * 100,\n    analyzed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "compile-final",
+      "name": "Compile Final Analysis",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_property_analysis",
+        "fields": {
+          "property_id": "={{$json.property_id}}",
+          "analysis_data": "={{$json}}",
+          "completeness_score": "={{$json.completeness_score}}",
+          "generated_at": "={{$now}}"
+        }
+      },
+      "id": "save-analysis",
+      "name": "Save Analysis to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load All Documents from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load All Documents from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Compile Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Summary": {
+      "main": [
+        [
+          {
+            "node": "Identify Red Flags (OpenRouter LLM)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Calculate Metrics (OpenRouter LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Red Flags (OpenRouter LLM)": {
+      "main": [
+        [
+          {
+            "node": "Compile Final Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Metrics (OpenRouter LLM)": {
+      "main": [
+        [
+          {
+            "node": "Compile Final Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Final Analysis": {
+      "main": [
+        [
+          {
+            "node": "Save Analysis to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["cre", "compilation"],
+  "triggerCount": 0,
+  "updatedAt": "2024-03-15T00:00:00.000Z",
+  "versionId": "1"
+}
+
