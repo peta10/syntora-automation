@@ -7,15 +7,8 @@
           "values": [
             {
               "name": "query",
-              "type": "string"
-            },
-            {
-              "name": "url",
-              "type": "string"
-            },
-            {
-              "name": "property_address",
-              "type": "string"
+              "type": "string",
+              "description": "Search query for web search"
             }
           ]
         }
@@ -28,29 +21,38 @@
     },
     {
       "parameters": {
-        "operation": "search",
-        "query": "={{ $json.query }}",
-        "url": "={{ $json.url }}",
-        "options": {
-          "limit": 10,
-          "format": "markdown"
-        }
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.FIRECRAWL_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: $json.query, pageOptions: { limit: 10 }, searchOptions: { limit: 10 } }) }}",
+        "options": {}
       },
       "id": "firecrawl-search",
-      "name": "Firecrawl Search",
-      "type": "n8n-nodes-base.firecrawl",
-      "typeVersion": 1,
+      "name": "Firecrawl Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [450, 300],
-      "credentials": {
-        "firecrawlApi": {
-          "id": "{{$env.FIRECRAWL_CREDENTIAL_ID}}",
-          "name": "Firecrawl"
-        }
-      }
+      "notes": "Uses Firecrawl API v1 /search endpoint\nSearches the entire web (no url parameter)\nReturns array of search results with URLs and content"
     },
     {
       "parameters": {
-        "functionCode": "// Process search results\nconst results = $json.data || [];\nconst query = $('When Executed by Another Workflow').item.json.query;\n\nreturn [{\n  json: {\n    operation: 'search',\n    query: query,\n    results_count: results.length,\n    results: results.map(r => ({\n      url: r.url,\n      title: r.title,\n      description: r.description,\n      content_preview: r.content?.substring(0, 500)\n    })),\n    success: true\n  }\n}];"
+        "functionCode": "// Process Firecrawl search results\nconst response = $json;\nconst query = $('When Executed by Another Workflow').item.json.query;\n\n// Firecrawl search returns { success, data: [...] }\nconst results = response.data || [];\n\nreturn [{\n  json: {\n    operation: 'search',\n    query: query,\n    results_count: results.length,\n    results: results.map(r => ({\n      url: r.url,\n      title: r.title || 'No title',\n      description: r.description || '',\n      content: r.markdown || r.content || '',\n      content_preview: (r.markdown || r.content || '').substring(0, 500)\n    })),\n    success: true,\n    timestamp: new Date().toISOString()\n  }\n}];"
       },
       "id": "process-results",
       "name": "Process Search Results",
@@ -65,15 +67,15 @@
       "typeVersion": 1,
       "position": [450, 500],
       "parameters": {
-        "message": "={{ 'Firecrawl search failed: ' + ($json.error?.message || 'Unknown error') }}"
+        "message": "={{ 'Firecrawl search failed: ' + ($json.error?.message || $json.message || 'Unknown error') }}"
       }
     }
   ],
   "connections": {
     "When Executed by Another Workflow": {
-      "main": [[{ "node": "Firecrawl Search", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Firecrawl Search API", "type": "main", "index": 0 }]]
     },
-    "Firecrawl Search": {
+    "Firecrawl Search API": {
       "main": [[{ "node": "Process Search Results", "type": "main", "index": 0 }]],
       "error": [[{ "node": "Error Handler", "type": "main", "index": 0 }]]
     }
@@ -81,14 +83,17 @@
   "pinData": {},
   "settings": {
     "executionOrder": "v1",
+    "saveManualExecutions": false,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
     "retryOnFail": true,
     "retryCount": 2,
-    "retryDelay": 1000
+    "retryDelay": 2000
   },
   "staticData": null,
-  "tags": ["cre", "tool", "firecrawl"],
+  "tags": ["cre", "tool", "firecrawl", "search"],
   "triggerCount": 0,
-  "updatedAt": "2024-03-15T00:00:00.000Z",
-  "versionId": "1.0"
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "2.0"
 }
-

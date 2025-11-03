@@ -53,7 +53,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Load county mapping with caching support\nconst countyMapping = {\n  'Los Angeles County': {\n    assessor: 'https://assessor.lacounty.gov',\n    planning: 'https://planning.lacounty.gov',\n    building: 'https://www.ladbs.org',\n    recorder: 'https://recorder.lacounty.gov',\n    code_enforcement: 'https://planning.lacounty.gov'\n  },\n  'Orange County': {\n    assessor: 'https://www.ocgov.com/services/property',\n    planning: 'https://www.ocplanning.net',\n    building: 'https://www.ocgov.com/services/building',\n    recorder: 'https://www.ocgov.com/services/county-recorder',\n    code_enforcement: 'https://www.ocgov.com/services/code-enforcement'\n  },\n  'San Diego County': {\n    assessor: 'https://www.sdcounty.ca.gov/assessor',\n    planning: 'https://www.sandiegocounty.gov/content/sdc/planning.html',\n    building: 'https://www.sandiegocounty.gov/content/sdc/dpw/permits.html',\n    recorder: 'https://arcc.sdcounty.ca.gov',\n    code_enforcement: 'https://www.sandiegocounty.gov/content/sdc/planning.html'\n  }\n};\n\nconst county = $json.county || 'Los Angeles County';\nconst sites = countyMapping[county] || countyMapping['Los Angeles County'];\n\nif (!sites) {\n  throw new Error(`County ${county} not yet supported. Please contact support.`);\n}\n\nreturn [{\n  json: {\n    ...$json,\n    assessor_url: sites.assessor,\n    planning_url: sites.planning,\n    building_url: sites.building,\n    recorder_url: sites.recorder,\n    code_enforcement_url: sites.code_enforcement,\n    county_supported: true\n  }\n}];"
+        "functionCode": "// Map county and city to official record URLs\nconst property = $json;\nconst county = property.county;\nconst city = property.city;\n\n// County-level record URLs (assessor, recorder, tax)\nconst countyMapping = {\n  'Cook County': {\n    assessor: 'https://www.cookcountyassessor.com/search/property',\n    recorder: 'https://cookrecorder.com/search/web',\n    property_tax: 'https://cookcountypropertyinfo.com/',\n    treasurer: 'https://www.cookcountytreasurer.com/search.aspx'\n  },\n  'DuPage County': {\n    assessor: 'https://www.dupageco.org/PropertySearch/',\n    recorder: 'https://www.dupageco.org/Recorder/'\n  },\n  'Lake County': {\n    assessor: 'https://www.lakecountyil.gov/1170/Property-Tax-and-Assessment-Information',\n    recorder: 'https://www.lakecountyil.gov/395/Recorder-of-Deeds'\n  },\n  'Will County': {\n    assessor: 'https://www.willcountyassessor.com/',\n    recorder: 'https://www.willcountyrecorder.com/'\n  },\n  'Kane County': {\n    assessor: 'https://www.kanecountyassessments.org/',\n    recorder: 'https://www.co.kane.il.us/recorder/'\n  },\n  'McHenry County': {\n    assessor: 'https://www.mchenrycountyil.gov/county-government/departments-j-z/supervisors-of-assessments',\n    recorder: 'https://www.mchenrycountyil.gov/county-government/departments-j-z/recorder-of-deeds'\n  }\n};\n\n// City-level record URLs (building permits, zoning, violations)\nconst cityMapping = {\n  'Chicago': {\n    building: 'https://webapps1.chicago.gov/buildingrecords/',\n    planning: 'https://www.chicago.gov/city/en/depts/dcd/supp_info/zoning.html',\n    code_enforcement: 'https://data.cityofchicago.org/Buildings/Building-Violations/22u3-xenr',\n    data_portal_api: 'https://data.cityofchicago.org/resource/',\n    use_api: true\n  },\n  'Naperville': {\n    building: 'https://www.naperville.il.us/services/building-permits/',\n    planning: 'https://www.naperville.il.us/services/planning-and-zoning/'\n  },\n  'Evanston': {\n    building: 'https://www.cityofevanston.org/government/departments/community-development',\n    planning: 'https://www.cityofevanston.org/government/departments/community-development/planning-zoning'\n  }\n  // Add more cities as needed - or use generic pattern\n};\n\n// Get county URLs\nconst countySites = countyMapping[county];\nif (!countySites) {\n  throw new Error(`County '${county}' not yet supported. Supported counties: ${Object.keys(countyMapping).join(', ')}`);\n}\n\n// Get city URLs (or use defaults)\nconst citySites = cityMapping[city] || {\n  building: `https://www.${city.toLowerCase().replace(/\\s+/g, '')}.il.us/`,\n  planning: `https://www.${city.toLowerCase().replace(/\\s+/g, '')}.il.us/`,\n  code_enforcement: `https://www.${city.toLowerCase().replace(/\\s+/g, '')}.il.us/`,\n  use_api: false,\n  note: 'Generic URLs - may need manual configuration for this city'\n};\n\nreturn [{\n  json: {\n    ...property,\n    assessor_url: countySites.assessor,\n    recorder_url: countySites.recorder,\n    property_tax_url: countySites.property_tax || countySites.assessor,\n    treasurer_url: countySites.treasurer || '',\n    building_url: citySites.building,\n    planning_url: citySites.planning,\n    code_enforcement_url: citySites.code_enforcement,\n    data_portal_api: citySites.data_portal_api || '',\n    use_chicago_api: citySites.use_api || false,\n    county_supported: true,\n    city_mapped: city in cityMapping\n  }\n}];"
       },
       "id": "county-mapping",
       "name": "Load County Municipal Sites",
@@ -63,25 +63,69 @@
     },
     {
       "parameters": {
-        "operation": "insert",
-        "table": "cre_properties",
-        "fields": {
-          "mappingMode": "defineBelow",
-          "values": {
-            "address": "={{$json.formatted_address}}",
-            "street": "={{$json.street}}",
-            "city": "={{$json.city}}",
-            "state": "={{$json.state}}",
-            "zip_code": "={{$json.zip_code}}",
-            "county": "={{$json.county}}",
-            "property_type": "={{$json.property_type}}",
-            "email": "={{$json.email}}",
-            "status": "processing",
-            "created_at": "={{$now}}"
-          }
+        "operation": "create",
+        "table": "automation.cre_properties",
+        "dataMode": "defineBelow",
+        "columnsUi": {
+          "values": [
+            {
+              "column": "address",
+              "value": "={{$json.formatted_address}}"
+            },
+            {
+              "column": "formatted_address",
+              "value": "={{$json.formatted_address}}"
+            },
+            {
+              "column": "street",
+              "value": "={{$json.street}}"
+            },
+            {
+              "column": "city",
+              "value": "={{$json.city}}"
+            },
+            {
+              "column": "state",
+              "value": "={{$json.state}}"
+            },
+            {
+              "column": "zip_code",
+              "value": "={{$json.zip_code}}"
+            },
+            {
+              "column": "county",
+              "value": "={{$json.county}}"
+            },
+            {
+              "column": "property_type",
+              "value": "={{$json.property_type}}"
+            },
+            {
+              "column": "email",
+              "value": "={{$json.email}}"
+            },
+            {
+              "column": "latitude",
+              "value": "={{$json.lat}}"
+            },
+            {
+              "column": "longitude",
+              "value": "={{$json.lng}}"
+            },
+            {
+              "column": "status",
+              "value": "processing"
+            },
+            {
+              "column": "created_at",
+              "value": "={{$now}}"
+            }
+          ]
         },
         "options": {
-          "returning": "id"
+          "queryName": "returning",
+          "returning": "Specific Fields",
+          "returnFields": "id"
         }
       },
       "id": "save-property",
@@ -132,20 +176,27 @@
       "main": [[{ "node": "Validate Input Data", "type": "main", "index": 0 }]]
     },
     "Validate Input Data": {
-      "main": [[{ "node": "Google Geocoding API", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Google Geocoding API", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Geocoding", "type": "main", "index": 0 }]]
     },
     "Google Geocoding API": {
       "main": [[{ "node": "Parse & Validate Geocoding Result", "type": "main", "index": 0 }]],
       "error": [[{ "node": "Error Handler - Geocoding", "type": "main", "index": 0 }]]
     },
     "Parse & Validate Geocoding Result": {
-      "main": [[{ "node": "Load County Municipal Sites", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Load County Municipal Sites", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Geocoding", "type": "main", "index": 0 }]]
     },
     "Load County Municipal Sites": {
-      "main": [[{ "node": "Save Property to Supabase", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Save Property to Supabase", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Database", "type": "main", "index": 0 }]]
     },
     "Save Property to Supabase": {
       "main": [[{ "node": "Format Return Data", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Error Handler - Database", "type": "main", "index": 0 }]]
+    },
+    "Format Return Data": {
+      "main": [[]],
       "error": [[{ "node": "Error Handler - Database", "type": "main", "index": 0 }]]
     }
   },
@@ -163,8 +214,8 @@
     "retryDelay": 1000
   },
   "staticData": null,
-  "tags": ["cre", "intake", "optimized"],
+  "tags": ["cre", "intake", "optimized", "chicago-area"],
   "triggerCount": 0,
-  "updatedAt": "2024-03-15T00:00:00.000Z",
-  "versionId": "2.0"
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "3.1"
 }
