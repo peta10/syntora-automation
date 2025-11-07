@@ -1,0 +1,399 @@
+{
+  "name": "Municipal Records Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "property_id",
+              "type": "string"
+            },
+            {
+              "name": "property_address",
+              "type": "string"
+            },
+            {
+              "name": "county",
+              "type": "string"
+            },
+            {
+              "name": "assessor_url",
+              "type": "string"
+            },
+            {
+              "name": "planning_url",
+              "type": "string"
+            },
+            {
+              "name": "building_url",
+              "type": "string"
+            },
+            {
+              "name": "recorder_url",
+              "type": "string"
+            },
+            {
+              "name": "code_enforcement_url",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize agent context\nconst input = $json;\nconst startTime = Date.now();\nconst costs = { firecrawl: 0, openrouter: 0, total: 0 };\n\nreturn [{\n  json: {\n    property_id: input.property_id,\n    property_address: input.property_address,\n    county: input.county,\n    assessor_url: input.assessor_url,\n    planning_url: input.planning_url,\n    building_url: input.building_url,\n    recorder_url: input.recorder_url,\n    code_enforcement_url: input.code_enforcement_url,\n    email: input.email,\n    start_time: startTime,\n    costs: costs,\n    documents_retrieved: [],\n    agent_context: `You are a CRE research agent specializing in municipal property records.\n\nPROPERTY: ${input.property_address}\nCOUNTY: ${input.county}\n\nDATA SOURCES - USE CORRECT URL FOR EACH:\n\nCOUNTY-LEVEL (Assessor/Tax):\n• Assessment & Values → ${input.assessor_url}\n  Get: Assessed value, market value, sq ft, lot size, year built, PIN\n• Property Tax → ${input.assessor_url}\n  Get: Annual tax, payment history, exemptions\n\nCITY-LEVEL (Building/Zoning):\n• Building Permits → ${input.building_url}\n  Get: Permit history, types, values\n• Zoning → ${input.planning_url}\n  Get: Zoning code, permitted uses\n• Violations → ${input.code_enforcement_url}\n  Get: Active violations, compliance\n\nSTRATEGY: Scrape assessor_url for PIN first, then use specific URLs for each data type.`\n  }\n}];"
+      },
+      "id": "init-context",
+      "name": "Initialize Agent Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.property_address || $json.text || $json.chatInput }}",
+        "options": {
+          "maxIterations": 15,
+          "systemMessage": "={{ $json.agent_context }}"
+        }
+      },
+      "id": "agent",
+      "name": "Municipal Records Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [650, 400],
+      "notesInFlow": true,
+      "notes": "AI Agent - Connect via ai_languageModel, ai_memory, and ai_tool"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "openrouter",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "openRouterApi": {
+          "id": "={{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=municipal_agent_{{ $json.property_id }}",
+        "contextWindowLength": 10
+      },
+      "id": "memory",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Search_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "02a-firecrawl-search-tool"
+        },
+        "description": "Search government websites for property records. Input: JSON with 'query' and 'property_address'.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "query",
+              "type": "string",
+              "required": true,
+              "displayName": "Search Query"
+            },
+            {
+              "id": "property_address",
+              "type": "string",
+              "required": false,
+              "displayName": "Property Address"
+            }
+          ],
+          "values": {
+            "query": "={{ $fromAI('query', 'Search query', 'string') }}",
+            "property_address": "={{ $json.property_address }}"
+          }
+        }
+      },
+      "id": "firecrawl-search-tool",
+      "name": "Firecrawl Search Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Scrape_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "02b-firecrawl-scrape-tool"
+        },
+        "description": "Scrape a specific URL. Input: JSON with 'url' and optional 'document_type'.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "url",
+              "type": "string",
+              "required": true,
+              "displayName": "URL to Scrape"
+            },
+            {
+              "id": "document_type",
+              "type": "string",
+              "required": false,
+              "displayName": "Document Type"
+            }
+          ],
+          "values": {
+            "url": "={{ $fromAI('url', 'URL to scrape', 'string') }}",
+            "document_type": "={{ $fromAI('document_type', 'Document type', 'string') }}"
+          }
+        }
+      },
+      "id": "firecrawl-scrape-tool",
+      "name": "Firecrawl Scrape Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [850, 550]
+    },
+    {
+      "parameters": {
+        "name": "Chicago_Data_Portal_API",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "02d-chicago-data-portal-api-tool"
+        },
+        "description": "ONLY for Chicago properties. Get permits/violations via API. Input: 'address' and 'dataset_type' (permits|violations|licenses).",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "address",
+              "type": "string",
+              "required": true,
+              "displayName": "Chicago Address"
+            },
+            {
+              "id": "dataset_type",
+              "type": "string",
+              "required": true,
+              "displayName": "Dataset Type"
+            }
+          ],
+          "values": {
+            "address": "={{ $fromAI('address', 'Chicago property address', 'string') || $json.property_address }}",
+            "dataset_type": "={{ $fromAI('dataset_type', 'permits, violations, or licenses', 'string') }}"
+          }
+        }
+      },
+      "id": "chicago-api-tool",
+      "name": "Chicago Data Portal API Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [850, 650]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process agent output\nconst agentOutput = $json.output || $json.text || '';\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst propertyAddress = $('Initialize Agent Context').item.json.property_address;\n\n// Create extraction prompt\nconst extractionPrompt = `Extract structured property data from the following agent output. Return ONLY valid JSON with these exact fields:\n{\n  \"document_type\": \"assessment|tax|zoning|permit|violation|lien|ownership|details\",\n  \"assessed_value\": number or null,\n  \"tax_amount\": number or null,\n  \"zoning_code\": string or null,\n  \"permit_count\": number or null,\n  \"violation_count\": number or null,\n  \"lien_amount\": number or null,\n  \"owner_name\": string or null,\n  \"property_details\": object or null,\n  \"confidence_score\": number between 0 and 1,\n  \"extracted_data\": object with all extracted information\n}\n\nAgent Output:\n${agentOutput.substring(0, 3000)}`;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    property_address: propertyAddress,\n    raw_output: agentOutput,\n    extraction_prompt: extractionPrompt,\n    needs_extraction: true\n  }\n}];"
+      },
+      "id": "process-agent-output",
+      "name": "Process Agent Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Extract Structured Data",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [1250, 400],
+      "credentials": {
+        "openRouterApi": {
+          "id": "={{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and prepare data for saving\nconst llmResponse = $json.message?.content || $json.content || $json.output || $json.text || '{}';\nlet extractedData;\n\ntry {\n  extractedData = JSON.parse(llmResponse);\n} catch (e) {\n  console.log('Failed to parse LLM response:', e);\n  return [{ json: { skip: true, reason: 'Invalid JSON from LLM', error: e.message } }];\n}\n\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst startTime = $('Initialize Agent Context').item.json.start_time;\n\n// Validate extracted data\nif (!extractedData.document_type || !extractedData.confidence_score || extractedData.confidence_score < 0.5) {\n  return [{ json: { skip: true, reason: 'Low confidence or missing document type' } }];\n}\n\n// Calculate cost (estimate)\nconst costs = $('Initialize Agent Context').item.json.costs;\ncosts.firecrawl += 0.01;\ncosts.openrouter += 0.002;\ncosts.total = costs.firecrawl + costs.openrouter;\n\n// Prepare document data\nconst documentData = {\n  property_id: propertyId,\n  document_type: extractedData.document_type,\n  document_category: 'municipal',\n  source: 'agent_retrieval',\n  extracted_data: extractedData.extracted_data || extractedData,\n  status: extractedData.confidence_score >= 0.7 ? 'validated' : 'needs_review'\n};\n\nreturn [{\n  json: {\n    ...documentData,\n    costs: costs,\n    execution_time_ms: Date.now() - startTime\n  }\n}];"
+      },
+      "id": "validate-save",
+      "name": "Validate & Prepare Save",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "table": "automation.cre_documents",
+        "dataMode": "defineBelow",
+        "columnsUi": {
+          "values": [
+            {
+              "column": "property_id",
+              "value": "={{$json.property_id}}"
+            },
+            {
+              "column": "document_type",
+              "value": "={{$json.document_type}}"
+            },
+            {
+              "column": "document_category",
+              "value": "={{$json.document_category}}"
+            },
+            {
+              "column": "source",
+              "value": "={{$json.source}}"
+            },
+            {
+              "column": "extracted_data",
+              "value": "={{JSON.stringify($json.extracted_data)}}"
+            },
+            {
+              "column": "status",
+              "value": "={{$json.status}}"
+            },
+            {
+              "column": "retrieved_at",
+              "value": "={{$now}}"
+            }
+          ]
+        }
+      },
+      "id": "save-document",
+      "name": "Save Document to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "={{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate results - handle both success and errors\nconst allItems = $input.all();\nconst documents = allItems.filter(i => !i.json.skip && !i.json.error).map(i => i.json.document_type);\nconst errors = allItems.filter(i => i.json.error || i.json.skip);\nconst totalCosts = allItems.reduce((acc, item) => {\n  if (item.json.costs) {\n    acc.firecrawl += item.json.costs.firecrawl || 0;\n    acc.openrouter += item.json.costs.openrouter || 0;\n  }\n  return acc;\n}, { firecrawl: 0, openrouter: 0, total: 0 });\n\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyId = $('Initialize Agent Context').item.json.property_id;\nconst startTime = $('Initialize Agent Context').item.json.start_time;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    status: documents.length > 0 ? 'success' : 'partial_failure',\n    documents_retrieved: documents.length,\n    document_types: documents,\n    errors_count: errors.length,\n    errors: errors.map(e => ({ reason: e.json.reason || e.json.error || 'Unknown error' })),\n    costs: totalCosts,\n    execution_time_ms: Date.now() - startTime,\n    branch: 'municipal'\n  }\n}];"
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Initialize Agent Context", "type": "main", "index": 0 }]]
+    },
+    "Initialize Agent Context": {
+      "main": [[{ "node": "Municipal Records Agent", "type": "main", "index": 0 }]]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [[{
+        "node": "Municipal Records Agent",
+        "type": "ai_languageModel",
+        "index": 0
+      }]]
+    },
+    "Simple Memory": {
+      "ai_memory": [[{
+        "node": "Municipal Records Agent",
+        "type": "ai_memory",
+        "index": 0
+      }]]
+    },
+    "Firecrawl Search Tool": {
+      "ai_tool": [[{
+        "node": "Municipal Records Agent",
+        "type": "ai_tool",
+        "index": 0
+      }]]
+    },
+    "Firecrawl Scrape Tool": {
+      "ai_tool": [[{
+        "node": "Municipal Records Agent",
+        "type": "ai_tool",
+        "index": 1
+      }]]
+    },
+    "Chicago Data Portal API Tool": {
+      "ai_tool": [[{
+        "node": "Municipal Records Agent",
+        "type": "ai_tool",
+        "index": 2
+      }]]
+    },
+    "Municipal Records Agent": {
+      "main": [[{ "node": "Process Agent Output", "type": "main", "index": 0 }]]
+    },
+    "Process Agent Output": {
+      "main": [[{ "node": "Extract Structured Data", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Extract Structured Data": {
+      "main": [[{ "node": "Validate & Prepare Save", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Validate & Prepare Save": {
+      "main": [[{ "node": "Save Document to Supabase", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    },
+    "Save Document to Supabase": {
+      "main": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Aggregate Results", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "executionTimeout": 1800,
+    "maxExecutions": 1000,
+    "retryOnFail": true,
+    "retryCount": 2,
+    "retryDelay": 2000
+  },
+  "staticData": null,
+  "tags": ["cre", "agent", "municipal", "langchain"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "3.1"
+}

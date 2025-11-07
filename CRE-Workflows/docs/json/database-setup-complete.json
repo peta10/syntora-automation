@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0.0",
+  "document_type": "DATABASE_SETUP",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "maintainer": "Parker Gawne",
+    "database": "Supabase PostgreSQL",
+    "project_id": "qcrgacxgwlpltdfpwkiz",
+    "schema": "automation",
+    "status": "COMPLETE"
+  },
+  "database_details": {
+    "project_id": "qcrgacxgwlpltdfpwkiz",
+    "project_name": "Syntora Automation Database",
+    "schema_used": "automation",
+    "organization_pattern": "Tables prefixed with cre_ for CRE workflows, fs_ for Financial Services workflows"
+  },
+  "tables_created": {
+    "total_tables": 5,
+    "all_in_automation_schema": true,
+    "tables": {
+      "cre_properties": {
+        "purpose": "Main properties table - stores property addresses and metadata",
+        "key_fields": [
+          "id (UUID PK)",
+          "address, formatted_address, street, city, state, zip_code, county",
+          "property_type (commercial, industrial, retail, multifamily, office, mixed_use)",
+          "email (for sending reports)",
+          "latitude, longitude (geocoding)",
+          "assessor_url, recorder_url, property_tax_url, building_url, planning_url, code_enforcement_url, data_portal_api",
+          "status (processing, completed, failed, needs_review)",
+          "execution_id, api_costs, execution_time_ms, report_url",
+          "created_at, completed_at, updated_at"
+        ],
+        "indexes": [
+          "idx_cre_properties_status",
+          "idx_cre_properties_county",
+          "idx_cre_properties_city",
+          "idx_cre_properties_email",
+          "idx_cre_properties_created_at"
+        ],
+        "row_level_security": "Enabled with policies"
+      },
+      "cre_documents": {
+        "purpose": "Stores all retrieved property documents with extracted data",
+        "key_fields": [
+          "id (UUID PK)",
+          "property_id (FK to cre_properties)",
+          "document_type (assessment, tax_record, zoning, permit, violation, lien, ownership, deed, ucc_filing, etc.)",
+          "document_category (municipal, title, financial)",
+          "source, source_url",
+          "extracted_data (JSONB - structured data extracted by LLM)",
+          "raw_content (original scraped content)",
+          "confidence_score (0-1)",
+          "status (pending, retrieved, validated, needs_review, failed)",
+          "retrieval_method (firecrawl_search, firecrawl_scrape, api, manual)",
+          "retrieved_by_agent, processing_time_ms",
+          "retrieved_at, validated_at, created_at, updated_at"
+        ],
+        "indexes": [
+          "idx_cre_documents_property_id",
+          "idx_cre_documents_type",
+          "idx_cre_documents_category",
+          "idx_cre_documents_status",
+          "idx_cre_documents_created_at",
+          "idx_cre_documents_extracted_data (GIN index for JSONB)"
+        ],
+        "row_level_security": "Enabled with policies"
+      },
+      "cre_property_analysis": {
+        "purpose": "AI-generated property analysis with risk assessment",
+        "key_fields": [
+          "id (UUID PK)",
+          "property_id (FK to cre_properties)",
+          "analysis_data (JSONB - complete analysis)",
+          "overall_assessment (PROCEED, REVIEW, WALK_AWAY)",
+          "risk_level (LOW, MEDIUM, HIGH, CRITICAL)",
+          "red_flags (JSONB array - deal breakers)",
+          "concerns (JSONB array - items needing attention)",
+          "strengths (JSONB array - positive aspects)",
+          "recommendations (JSONB array - next steps)",
+          "assessed_value, annual_tax, estimated_cap_rate, property_age",
+          "completeness_score (0-100)",
+          "llm_model_used, llm_tokens_used, analysis_time_ms",
+          "generated_at, created_at"
+        ],
+        "indexes": [
+          "idx_cre_analysis_property_id",
+          "idx_cre_analysis_assessment",
+          "idx_cre_analysis_risk",
+          "idx_cre_analysis_generated_at",
+          "idx_cre_analysis_data (GIN index for JSONB)",
+          "idx_cre_analysis_red_flags (GIN index)"
+        ],
+        "row_level_security": "Enabled with policies"
+      },
+      "cre_workflow_logs": {
+        "purpose": "Detailed execution logs for monitoring and debugging",
+        "key_fields": [
+          "id (UUID PK)",
+          "workflow_id, workflow_name",
+          "property_id (FK to cre_properties)",
+          "stage (property_intake, municipal_records, title_records, data_compilation, report_generation, completed, failed)",
+          "status (running, success, failed, timeout, partial)",
+          "execution_time_ms, api_calls_made, documents_retrieved",
+          "firecrawl_credits_used, openrouter_tokens_used, estimated_cost_usd",
+          "error_message, error_stack, retry_count",
+          "metadata (JSONB)",
+          "started_at, completed_at, created_at"
+        ],
+        "indexes": [
+          "idx_cre_logs_property_id",
+          "idx_cre_logs_workflow_id",
+          "idx_cre_logs_stage",
+          "idx_cre_logs_status",
+          "idx_cre_logs_created_at",
+          "idx_cre_logs_metadata (GIN index)"
+        ],
+        "row_level_security": "Enabled with policies"
+      },
+      "cre_agent_performance": {
+        "purpose": "Track AI agent performance for optimization",
+        "key_fields": [
+          "id (UUID PK)",
+          "agent_name (municipal_records_agent, title_records_agent)",
+          "property_id (FK to cre_properties)",
+          "tools_called (JSONB array)",
+          "tool_call_count, successful_tool_calls, failed_tool_calls",
+          "data_completeness, data_accuracy, confidence_score",
+          "execution_time_ms, iterations_used, max_iterations, tokens_used",
+          "task_completed, documents_retrieved, errors_encountered",
+          "firecrawl_api_calls, llm_api_calls, estimated_cost_usd",
+          "improvement_suggestions (JSONB)",
+          "started_at, completed_at, created_at"
+        ],
+        "indexes": [
+          "idx_cre_agent_perf_property_id",
+          "idx_cre_agent_perf_agent_name",
+          "idx_cre_agent_perf_created_at"
+        ],
+        "row_level_security": "Enabled with policies"
+      }
+    }
+  },
+  "row_level_security": {
+    "enabled": true,
+    "policies_created": [
+      "Service role (n8n) has full access to all CRE tables",
+      "Authenticated users can read their own properties (by email)",
+      "Authenticated users can read their own documents",
+      "Authenticated users can read their own analysis"
+    ],
+    "security_model": "Service role for automation, user role for dashboard/viewing"
+  },
+  "data_organization": {
+    "schema": "automation",
+    "table_prefixes": {
+      "cre_": "Commercial Real Estate workflows",
+      "fs_": "Financial Services workflows"
+    },
+    "separation": "Clear separation between different automation systems while sharing same database/schema"
+  },
+  "foreign_key_relationships": {
+    "cre_documents": "property_id → cre_properties.id (CASCADE DELETE)",
+    "cre_property_analysis": "property_id → cre_properties.id (CASCADE DELETE)",
+    "cre_workflow_logs": "property_id → cre_properties.id (CASCADE DELETE)",
+    "cre_agent_performance": "property_id → cre_properties.id (CASCADE DELETE)",
+    "cascade_behavior": "When property deleted, all related documents, analysis, logs, and performance records are deleted"
+  },
+  "migrations_applied": [
+    "create_cre_properties_table",
+    "create_cre_documents_table",
+    "create_cre_property_analysis_table",
+    "create_cre_workflow_logs_table",
+    "create_cre_agent_performance_table",
+    "enable_cre_rls_policies"
+  ],
+  "workflow_integration": {
+    "property_intake_01": "Inserts into automation.cre_properties",
+    "municipal_agent_02": "Inserts into automation.cre_documents (municipal category)",
+    "title_agent_03": "Inserts into automation.cre_documents (title category)",
+    "data_compilation_04": "Reads from cre_documents, inserts into cre_property_analysis",
+    "report_generation_05": "Reads from cre_property_analysis and cre_properties, updates cre_properties with report_url",
+    "master_orchestrator_00": "Inserts into cre_workflow_logs for tracking"
+  },
+  "connection_string_for_n8n": {
+    "host": "qcrgacxgwlpltdfpwkiz.supabase.co",
+    "database": "postgres",
+    "schema": "automation",
+    "tables": "cre_*",
+    "credential_id_env_var": "SUPABASE_CREDENTIAL_ID"
+  },
+  "status": "COMPLETE",
+  "ready_for_use": true,
+  "next_steps": [
+    "Database schema is complete ✅",
+    "All tables created in automation schema ✅",
+    "RLS policies enabled ✅",
+    "Foreign keys and indexes in place ✅",
+    "Workflows reference correct table names ✅",
+    "Ready for n8n workflow testing"
+  ]
+}
+

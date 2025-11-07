@@ -1,0 +1,469 @@
+---
+alwaysApply: false
+---
+{
+  "schema_version": "1.0.0",
+  "rule_type": "agent_architecture_pattern",
+  "last_updated": "2025-01-23T22:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": [
+      "all_agent_workflows",
+      "agent_planning",
+      "agent_architecture_design",
+      "workflow_modification"
+    ]
+  },
+  "critical_rules": {
+    "agent_node_type": {
+      "rule": "NEVER use n8n-nodes-base.agent - it is DEPRECATED and WRONG. ALWAYS use @n8n/n8n-nodes-langchain.agent for agent nodes.",
+      "correct": "@n8n/n8n-nodes-langchain.agent",
+      "incorrect": "n8n-nodes-base.agent",
+      "typeVersion": "1.7"
+    },
+    "connection_pattern": {
+      "description": "The correct agent/sub-agent architecture pattern",
+      "visual": "Language Model → ai_languageModel → Agent ← ai_tool ← Tools\n                                              ↓\n                                       (main output)\n                                              ↓\n                                      Process Results",
+      "correct_pattern": {
+        "agent_node": "@n8n/n8n-nodes-langchain.agent",
+        "agent_typeVersion": "1.7",
+        "language_model_connection": "ai_languageModel",
+        "language_model_direction": "TO_AGENT",
+        "tool_connection": "ai_tool",
+        "tool_direction": "TO_AGENT",
+        "agent_output": "main",
+        "agent_output_direction": "FROM_AGENT",
+        "memory_connection": "ai_memory",
+        "memory_direction": "TO_AGENT",
+        "memory_optional": true
+      },
+      "forbidden_patterns": [
+        "Using n8n-nodes-base.agent (deprecated)",
+        "Connecting agent main output to language model",
+        "Connecting language model main output directly to tools",
+        "Using executeWorkflow for agent orchestration (use toolWorkflow instead)",
+        "Using n8n-nodes-base.toolWorkflow (use @n8n/n8n-nodes-langchain.toolWorkflow)"
+      ]
+    }
+  },
+  "required_configurations": {
+    "agent_node": {
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": "1.7",
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput || $json.text || $json.property_address }}",
+        "options": {
+          "systemMessage": "REQUIRED: Comprehensive system message defining agent role, available tools, and usage instructions"
+        }
+      }
+    },
+    "language_model_connection": {
+      "connection_type": "ai_languageModel",
+      "direction": "TO_AGENT",
+      "example": {
+        "Language Model Node": {
+          "ai_languageModel": [[{
+            "node": "Agent Node Name",
+            "type": "ai_languageModel",
+            "index": 0
+          }]]
+        }
+      }
+    },
+    "tool_workflow_connection": {
+      "connection_type": "ai_tool",
+      "direction": "TO_AGENT",
+      "example": {
+        "Tool Workflow Node": {
+          "ai_tool": [[{
+            "node": "Agent Node Name",
+            "type": "ai_tool",
+            "index": 0
+          }]]
+        }
+      }
+    },
+    "agent_output_connection": {
+      "connection_type": "main",
+      "direction": "FROM_AGENT",
+      "example": {
+        "Agent Node": {
+          "main": [[{
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }]]
+        }
+      }
+    }
+  },
+  "why_this_pattern_is_required": {
+    "dynamic_orchestration": "Agent intelligently decides which tools to call based on context",
+    "industry_standard": "Follows OpenAI function calling and LangChain patterns",
+    "proper_tool_integration": "Uses native tool calling system (not manual workflow logic)",
+    "context_preservation": "Maintains unified conversation context across tool calls",
+    "scalability": "Easy to add new tools without changing agent logic"
+  },
+  "validation_requirements": {
+    "before_commit": [
+      "Verify agent node type is @n8n/n8n-nodes-langchain.agent",
+      "Verify language model connects via ai_languageModel",
+      "Verify tools connect via ai_tool",
+      "Verify agent has promptType and text parameters",
+      "Verify agent has systemMessage in options",
+      "Run validation script: ./scripts/validate-agent-workflow.sh workflow.json"
+    ],
+    "validation_script": "./CRE-Workflows/scripts/validate-agent-workflow.sh"
+  },
+  "when_creating_new_agent_workflows": {
+    "steps": [
+      "ALWAYS start from template: CRE-Workflows/templates/agent-workflow-template.json",
+      "Replace placeholders with actual values",
+      "Ensure all connections follow the correct pattern above",
+      "Write comprehensive system message (see implementation guide)",
+      "Validate before committing"
+    ],
+    "template_location": "CRE-Workflows/templates/agent-workflow-template.json"
+  },
+  "when_modifying_existing_agent_workflows": {
+    "steps": [
+      "Check current node types - update if using n8n-nodes-base.agent",
+      "Check connection types - fix if using wrong connection pattern",
+      "Update system message if adding new tools",
+      "Validate before committing"
+    ]
+  },
+  "system_message_requirements": {
+    "must_include": [
+      "Agent role definition",
+      "Available tools and when to use each",
+      "Input format for tools",
+      "Expected output format",
+      "Error handling strategy"
+    ],
+    "reference": "CRE-Workflows/docs/json/agent-implementation-guide.json"
+  },
+  "documentation_references": {
+    "architecture": "CRE-Workflows/docs/json/agent-architecture.json",
+    "validation": "CRE-Workflows/docs/json/agent-validation-rules.json",
+    "implementation": "CRE-Workflows/docs/json/agent-implementation-guide.json",
+    "template": "CRE-Workflows/templates/agent-workflow-template.json",
+    "project_instructions": "CRE-Workflows/PROJECT-AGENT-INSTRUCTIONS.md"
+  },
+  "cre_specific_guidelines": {
+    "master_orchestrator": "Should use CRE Master Agent (not executeWorkflow pattern)",
+    "municipal_records_agent": "Should be converted to tool workflow",
+    "title_records_agent": "Should be converted to tool workflow",
+    "connection_pattern": "Both agents should connect to Master Agent via ai_tool"
+  },
+  "common_mistakes_to_avoid": [
+    "Using n8n-nodes-base.agent instead of @n8n/n8n-nodes-langchain.agent",
+    "Connecting agent → language model via main connection",
+    "Connecting language model → tools via main connection",
+    "Using executeWorkflow to call agent workflows",
+    "Missing promptType or text parameters",
+    "Vague or missing system message",
+    "Unclear tool descriptions"
+  ],
+  "enforcement": {
+    "required": true,
+    "validation_before_commit": true,
+    "pre_commit_hook": "Validates *-agent.json files automatically",
+    "manual_validation": "./CRE-Workflows/scripts/validate-agent-workflow.sh workflow.json",
+    "action_on_failure": "Fix issues before proceeding"
+  },
+  "examples": {
+    "correct_agent_node": {
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": "1.7",
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.property_address }}",
+        "options": {
+          "systemMessage": "You are a CRE research agent..."
+        }
+      }
+    },
+    "correct_tool_workflow_node": {
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": "2",
+      "parameters": {
+        "name": "MunicipalRecordsAgent",
+        "description": "Call this tool to retrieve municipal property records...",
+        "workflowId": { "value": "02-municipal-records-agent" }
+      }
+    },
+    "correct_connections": {
+      "connections": {
+        "Language Model": {
+          "ai_languageModel": [[{
+            "node": "Agent Name",
+            "type": "ai_languageModel",
+            "index": 0
+          }]]
+        },
+        "Tool Workflow": {
+          "ai_tool": [[{
+            "node": "Agent Name",
+            "type": "ai_tool",
+            "index": 0
+          }]]
+        },
+        "Agent Name": {
+          "main": [[{
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }]]
+        }
+      }
+    }
+  },
+  "reminder": {
+    "before_any_agent_work": [
+      "Review this rule section",
+      "Check the correct pattern above",
+      "Validate connections",
+      "Run validation script",
+      "Reference documentation if unsure"
+    ],
+    "enforcement": "This pattern is MANDATORY for all agent workflows in this workspace."
+  }
+}
+
+{
+  "schema_version": "1.0.0",
+  "rule_type": "agent_architecture_pattern",
+  "last_updated": "2025-01-23T22:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": [
+      "all_agent_workflows",
+      "agent_planning",
+      "agent_architecture_design",
+      "workflow_modification"
+    ]
+  },
+  "critical_rules": {
+    "agent_node_type": {
+      "rule": "NEVER use n8n-nodes-base.agent - it is DEPRECATED and WRONG. ALWAYS use @n8n/n8n-nodes-langchain.agent for agent nodes.",
+      "correct": "@n8n/n8n-nodes-langchain.agent",
+      "incorrect": "n8n-nodes-base.agent",
+      "typeVersion": "1.7"
+    },
+    "connection_pattern": {
+      "description": "The correct agent/sub-agent architecture pattern",
+      "visual": "Language Model → ai_languageModel → Agent ← ai_tool ← Tools\n                                              ↓\n                                       (main output)\n                                              ↓\n                                      Process Results",
+      "correct_pattern": {
+        "agent_node": "@n8n/n8n-nodes-langchain.agent",
+        "agent_typeVersion": "1.7",
+        "language_model_connection": "ai_languageModel",
+        "language_model_direction": "TO_AGENT",
+        "tool_connection": "ai_tool",
+        "tool_direction": "TO_AGENT",
+        "agent_output": "main",
+        "agent_output_direction": "FROM_AGENT",
+        "memory_connection": "ai_memory",
+        "memory_direction": "TO_AGENT",
+        "memory_optional": true
+      },
+      "forbidden_patterns": [
+        "Using n8n-nodes-base.agent (deprecated)",
+        "Connecting agent main output to language model",
+        "Connecting language model main output directly to tools",
+        "Using executeWorkflow for agent orchestration (use toolWorkflow instead)",
+        "Using n8n-nodes-base.toolWorkflow (use @n8n/n8n-nodes-langchain.toolWorkflow)"
+      ]
+    }
+  },
+  "required_configurations": {
+    "agent_node": {
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": "1.7",
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput || $json.text || $json.property_address }}",
+        "options": {
+          "systemMessage": "REQUIRED: Comprehensive system message defining agent role, available tools, and usage instructions"
+        }
+      }
+    },
+    "language_model_connection": {
+      "connection_type": "ai_languageModel",
+      "direction": "TO_AGENT",
+      "example": {
+        "Language Model Node": {
+          "ai_languageModel": [[{
+            "node": "Agent Node Name",
+            "type": "ai_languageModel",
+            "index": 0
+          }]]
+        }
+      }
+    },
+    "tool_workflow_connection": {
+      "connection_type": "ai_tool",
+      "direction": "TO_AGENT",
+      "example": {
+        "Tool Workflow Node": {
+          "ai_tool": [[{
+            "node": "Agent Node Name",
+            "type": "ai_tool",
+            "index": 0
+          }]]
+        }
+      }
+    },
+    "agent_output_connection": {
+      "connection_type": "main",
+      "direction": "FROM_AGENT",
+      "example": {
+        "Agent Node": {
+          "main": [[{
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }]]
+        }
+      }
+    }
+  },
+  "why_this_pattern_is_required": {
+    "dynamic_orchestration": "Agent intelligently decides which tools to call based on context",
+    "industry_standard": "Follows OpenAI function calling and LangChain patterns",
+    "proper_tool_integration": "Uses native tool calling system (not manual workflow logic)",
+    "context_preservation": "Maintains unified conversation context across tool calls",
+    "scalability": "Easy to add new tools without changing agent logic"
+  },
+  "validation_requirements": {
+    "before_commit": [
+      "Verify agent node type is @n8n/n8n-nodes-langchain.agent",
+      "Verify language model connects via ai_languageModel",
+      "Verify tools connect via ai_tool",
+      "Verify agent has promptType and text parameters",
+      "Verify agent has systemMessage in options",
+      "Run validation script: ./scripts/validate-agent-workflow.sh workflow.json"
+    ],
+    "validation_script": "./CRE-Workflows/scripts/validate-agent-workflow.sh"
+  },
+  "when_creating_new_agent_workflows": {
+    "steps": [
+      "ALWAYS start from template: CRE-Workflows/templates/agent-workflow-template.json",
+      "Replace placeholders with actual values",
+      "Ensure all connections follow the correct pattern above",
+      "Write comprehensive system message (see implementation guide)",
+      "Validate before committing"
+    ],
+    "template_location": "CRE-Workflows/templates/agent-workflow-template.json"
+  },
+  "when_modifying_existing_agent_workflows": {
+    "steps": [
+      "Check current node types - update if using n8n-nodes-base.agent",
+      "Check connection types - fix if using wrong connection pattern",
+      "Update system message if adding new tools",
+      "Validate before committing"
+    ]
+  },
+  "system_message_requirements": {
+    "must_include": [
+      "Agent role definition",
+      "Available tools and when to use each",
+      "Input format for tools",
+      "Expected output format",
+      "Error handling strategy"
+    ],
+    "reference": "CRE-Workflows/docs/json/agent-implementation-guide.json"
+  },
+  "documentation_references": {
+    "architecture": "CRE-Workflows/docs/json/agent-architecture.json",
+    "validation": "CRE-Workflows/docs/json/agent-validation-rules.json",
+    "implementation": "CRE-Workflows/docs/json/agent-implementation-guide.json",
+    "template": "CRE-Workflows/templates/agent-workflow-template.json",
+    "project_instructions": "CRE-Workflows/PROJECT-AGENT-INSTRUCTIONS.md"
+  },
+  "cre_specific_guidelines": {
+    "master_orchestrator": "Should use CRE Master Agent (not executeWorkflow pattern)",
+    "municipal_records_agent": "Should be converted to tool workflow",
+    "title_records_agent": "Should be converted to tool workflow",
+    "connection_pattern": "Both agents should connect to Master Agent via ai_tool"
+  },
+  "common_mistakes_to_avoid": [
+    "Using n8n-nodes-base.agent instead of @n8n/n8n-nodes-langchain.agent",
+    "Connecting agent → language model via main connection",
+    "Connecting language model → tools via main connection",
+    "Using executeWorkflow to call agent workflows",
+    "Missing promptType or text parameters",
+    "Vague or missing system message",
+    "Unclear tool descriptions"
+  ],
+  "enforcement": {
+    "required": true,
+    "validation_before_commit": true,
+    "pre_commit_hook": "Validates *-agent.json files automatically",
+    "manual_validation": "./CRE-Workflows/scripts/validate-agent-workflow.sh workflow.json",
+    "action_on_failure": "Fix issues before proceeding"
+  },
+  "examples": {
+    "correct_agent_node": {
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": "1.7",
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.property_address }}",
+        "options": {
+          "systemMessage": "You are a CRE research agent..."
+        }
+      }
+    },
+    "correct_tool_workflow_node": {
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": "2",
+      "parameters": {
+        "name": "MunicipalRecordsAgent",
+        "description": "Call this tool to retrieve municipal property records...",
+        "workflowId": { "value": "02-municipal-records-agent" }
+      }
+    },
+    "correct_connections": {
+      "connections": {
+        "Language Model": {
+          "ai_languageModel": [[{
+            "node": "Agent Name",
+            "type": "ai_languageModel",
+            "index": 0
+          }]]
+        },
+        "Tool Workflow": {
+          "ai_tool": [[{
+            "node": "Agent Name",
+            "type": "ai_tool",
+            "index": 0
+          }]]
+        },
+        "Agent Name": {
+          "main": [[{
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }]]
+        }
+      }
+    }
+  },
+  "reminder": {
+    "before_any_agent_work": [
+      "Review this rule section",
+      "Check the correct pattern above",
+      "Validate connections",
+      "Run validation script",
+      "Reference documentation if unsure"
+    ],
+    "enforcement": "This pattern is MANDATORY for all agent workflows in this workspace."
+  }
+}
+

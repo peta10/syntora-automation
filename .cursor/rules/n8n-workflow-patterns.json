@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "n8n_workflow_best_practices",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "n8n Workflow Automation",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": ["all_n8n_workflows"]
+  },
+  "critical_principles": {
+    "use_native_nodes_first": {
+      "rule": "ALWAYS prefer native n8n nodes over manual HTTP requests",
+      "priority_order": [
+        "1. Native n8n node (if available)",
+        "2. Community node (if verified and up-to-date)",
+        "3. HTTP Request (only if no native node exists)"
+      ],
+      "examples": {
+        "llm_apis": "Use @n8n/n8n-nodes-langchain.lmChatOpenRouter NOT HTTP Request",
+        "supabase": "Use n8n-nodes-base.supabase NOT HTTP Request",
+        "google_drive": "Use n8n-nodes-base.googleDrive NOT HTTP Request",
+        "custom_apis": "Use HTTP Request when no native node exists (Firecrawl, etc.)"
+      }
+    },
+    "environment_variables": {
+      "rule": "NEVER hardcode credentials, API keys, or configuration - ALWAYS use environment variables",
+      "pattern": "{{$env.VARIABLE_NAME}}",
+      "applies_to": [
+        "All credential IDs",
+        "All API keys",
+        "All URLs that change between environments",
+        "All configuration values"
+      ]
+    },
+    "error_handling": {
+      "rule": "ALWAYS add error connections and Error Handler nodes",
+      "required": "Every node that can fail MUST have error connection",
+      "pattern": "Node → error → Stop and Error node",
+      "never": "Let errors silently fail"
+    }
+  },
+  "workflow_structure_patterns": {
+    "tool_workflow": {
+      "description": "Simple sub-workflow used as a tool by agents",
+      "structure": [
+        "Execute Workflow Trigger (with workflowInputs)",
+        "Processing nodes (HTTP Request, Function, etc.)",
+        "Return/Output node",
+        "Error Handler"
+      ],
+      "must_not_contain": "Agent nodes (agents can't be tools for other agents)"
+    },
+    "agent_workflow": {
+      "description": "Workflow containing an AI agent that orchestrates tools",
+      "structure": [
+        "Trigger (Execute Workflow Trigger or Form Trigger)",
+        "Initialize Context (Function node)",
+        "Agent Node (@n8n/n8n-nodes-langchain.agent)",
+        "Language Model (connected via ai_languageModel)",
+        "Memory (connected via ai_memory, optional)",
+        "Tool Workflows (connected via ai_tool)",
+        "Process Output (Function node)",
+        "Save/Return results"
+      ],
+      "connections": {
+        "language_model": "ai_languageModel TO agent",
+        "memory": "ai_memory TO agent",
+        "tools": "ai_tool TO agent",
+        "agent_output": "main FROM agent"
+      }
+    },
+    "orchestrator_workflow": {
+      "description": "Master workflow that calls other complete workflows",
+      "structure": [
+        "Trigger (Form, Schedule, Webhook)",
+        "Initialize",
+        "Execute Workflow nodes (for calling sub-workflows)",
+        "Process/Merge results",
+        "Final output"
+      ],
+      "calls_workflows_via": "n8n-nodes-base.executeWorkflow",
+      "never_use": "Agent nodes to call other agent workflows as tools"
+    }
+  },
+  "async_operations": {
+    "rule": "Identify async operations and implement proper polling patterns",
+    "async_indicators": [
+      "API returns job ID or task ID",
+      "Documentation mentions 'async', 'polling', or 'webhook callback'",
+      "Operation is long-running (crawling, batch processing, etc.)"
+    ],
+    "implementation_pattern": {
+      "step_1": "HTTP Request to start operation (returns job_id)",
+      "step_2": "Function node to extract job_id",
+      "step_3": "Wait node (5-10 seconds)",
+      "step_4": "HTTP Request to check status",
+      "step_5": "If node to check if complete",
+      "step_6_not_complete": "Loop back to Wait node",
+      "step_7_complete": "Process results"
+    },
+    "example_apis_that_are_async": [
+      "Firecrawl /v1/crawl",
+      "Batch processing APIs",
+      "Video/audio transcription",
+      "Long document processing"
+    ]
+  },
+  "credential_management": {
+    "all_credentials_via_env": {
+      "rule": "ALL credential references MUST use environment variables",
+      "pattern": "{{$env.CREDENTIAL_NAME_CREDENTIAL_ID}}",
+      "examples": {
+        "supabase": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+        "openrouter": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+        "firecrawl": "{{$env.FIRECRAWL_API_KEY}}",
+        "google_drive": "{{$env.GOOGLE_DRIVE_CREDENTIAL_ID}}",
+        "smtp": "{{$env.SMTP_CREDENTIAL_ID}}"
+      }
+    },
+    "never_hardcode": [
+      "Credential IDs",
+      "API keys",
+      "Passwords",
+      "Tokens",
+      "Secret keys"
+    ]
+  },
+  "data_processing_best_practices": {
+    "use_native_nodes": {
+      "instead_of_function": [
+        "Use Edit Fields (Set) node for setting values",
+        "Use Filter node for filtering data",
+        "Use If node for conditionals",
+        "Use Merge node for merging data"
+      ],
+      "use_function_for": [
+        "Complex data transformations",
+        "Multi-step calculations",
+        "Custom business logic",
+        "Accessing multiple previous nodes"
+      ]
+    },
+    "expressions": {
+      "use_expressions": "={{...}} for dynamic values",
+      "reference_previous_nodes": "$('Node Name').item.json.field",
+      "reference_all_items": "$input.all()",
+      "current_item": "$json.field"
+    }
+  },
+  "validation_before_workflow_creation": {
+    "checklist": [
+      "Have you reviewed if native n8n nodes exist for your use case?",
+      "Are all credentials using environment variables?",
+      "Have you added error handling to all nodes?",
+      "Are you using LangChain nodes for LLM calls (not HTTP Request)?",
+      "For Firecrawl: Are you using HTTP Request (not community node)?",
+      "For async operations: Have you implemented polling pattern?",
+      "Are tool workflows simple (no nested agents)?",
+      "Do agent workflows use proper connection types (ai_languageModel, ai_tool, ai_memory)?"
+    ]
+  },
+  "common_anti_patterns": {
+    "manual_api_calls_when_nodes_exist": {
+      "wrong": "Using HTTP Request for Supabase, OpenRouter, Google Drive when native nodes exist",
+      "correct": "Use native nodes: n8n-nodes-base.supabase, @n8n/n8n-nodes-langchain.lmChatOpenRouter, etc.",
+      "exception": "APIs without native nodes (Firecrawl, custom APIs)"
+    },
+    "hardcoded_configuration": {
+      "wrong": "Hardcoding IDs, keys, URLs in node parameters",
+      "correct": "Use environment variables for all configuration",
+      "impact": "Workflows can't be moved between environments"
+    },
+    "no_error_handling": {
+      "wrong": "Nodes without error connections",
+      "correct": "Connect error output to Error Handler nodes",
+      "impact": "Silent failures, difficult debugging"
+    },
+    "treating_async_as_sync": {
+      "wrong": "Expecting immediate results from async operations",
+      "correct": "Implement Wait → Poll → Check pattern",
+      "example": "Firecrawl crawl, batch processing APIs"
+    }
+  }
+}
+

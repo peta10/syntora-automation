@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0.0",
+  "rule_type": "property_data_source_selection",
+  "last_updated": "2025-11-03T00:00:00Z",
+  "metadata": {
+    "project": "CRE Property Research",
+    "maintainer": "Parker Gawne",
+    "enforcement_level": "mandatory",
+    "applies_to": ["property_research_workflows", "data_source_selection"]
+  },
+  "critical_understanding": {
+    "county_vs_city_records": {
+      "rule": "Property records are organized at COUNTY level, building/zoning at CITY level",
+      "county_level_records": [
+        "Property assessments (values, characteristics)",
+        "Property tax records",
+        "Deed records and ownership history",
+        "Liens and mortgages",
+        "UCC filings",
+        "Title records"
+      ],
+      "city_level_records": [
+        "Building permits",
+        "Zoning classifications",
+        "Code violations",
+        "Business licenses",
+        "Occupancy permits"
+      ],
+      "critical_implication": "MUST determine BOTH county AND city to get complete records"
+    }
+  },
+  "url_selection_logic": {
+    "step_1_geocode": {
+      "action": "Geocode property address to get county and city",
+      "required_api": "Google Maps Geocoding API or similar",
+      "extract_fields": [
+        "administrative_area_level_2 (County)",
+        "locality (City)",
+        "administrative_area_level_1 (State)"
+      ]
+    },
+    "step_2_county_mapping": {
+      "action": "Map county name to county record URLs",
+      "implementation": "Switch/If node or Function node with mapping object",
+      "required_urls": [
+        "assessor_url",
+        "recorder_url",
+        "property_tax_url",
+        "treasurer_url (optional)"
+      ]
+    },
+    "step_3_city_mapping": {
+      "action": "Map city name to municipal record URLs",
+      "implementation": "Function node with city-to-URL mapping",
+      "required_urls": [
+        "building_url",
+        "planning_url",
+        "code_enforcement_url"
+      ],
+      "note": "Each city has different websites - may need manual configuration"
+    }
+  },
+  "chicago_area_mappings": {
+    "cook_county": {
+      "county_name": "Cook County",
+      "assessor_url": "https://www.cookcountyassessor.com/search/property",
+      "recorder_url": "https://cookrecorder.com/search/web",
+      "property_tax_url": "https://cookcountypropertyinfo.com/",
+      "treasurer_url": "https://www.cookcountytreasurer.com/search.aspx"
+    },
+    "dupage_county": {
+      "county_name": "DuPage County",
+      "assessor_url": "https://www.dupageco.org/PropertySearch/",
+      "recorder_url": "https://www.dupageco.org/Recorder/"
+    },
+    "lake_county": {
+      "county_name": "Lake County",
+      "assessor_url": "https://www.lakecountyil.gov/1170/Property-Tax-and-Assessment-Information",
+      "recorder_url": "https://www.lakecountyil.gov/395/Recorder-of-Deeds"
+    },
+    "will_county": {
+      "county_name": "Will County",
+      "assessor_url": "https://www.willcountyassessor.com/",
+      "recorder_url": "https://www.willcountyrecorder.com/"
+    },
+    "kane_county": {
+      "county_name": "Kane County",
+      "assessor_url": "https://www.kanecountyassessments.org/",
+      "recorder_url": "https://www.co.kane.il.us/recorder/"
+    }
+  },
+  "chicago_city_mappings": {
+    "city_name": "Chicago",
+    "building_permits_url": "https://webapps1.chicago.gov/buildingrecords/",
+    "data_portal_api": "https://data.cityofchicago.org/resource/",
+    "building_permits_api": "https://data.cityofchicago.org/resource/ydr8-5enu.json",
+    "building_violations_api": "https://data.cityofchicago.org/resource/22u3-xenr.json",
+    "recommendation": "Use Data Portal API instead of web scraping for Chicago"
+  },
+  "agent_system_message_updates": {
+    "municipal_agent": {
+      "add_to_system_message": "IMPORTANT: Property records are organized by COUNTY and CITY:\\n\\nCOUNTY-LEVEL SOURCES (use these for assessments, taxes, ownership):\\n- Assessor URL: Property values, characteristics, exemptions\\n- Property Tax URL: Tax bills and payment history\\n\\nCITY-LEVEL SOURCES (use these for permits, zoning, violations):\\n- Building URL: Building permits and inspections\\n- Planning URL: Zoning information\\n- Code Enforcement URL: Violations and compliance\\n\\nFor Chicago properties, prefer Chicago Data Portal API over web scraping when available.",
+      "tool_usage_strategy": [
+        "Start with assessor_url to get property details and PIN",
+        "Use PIN for subsequent county lookups (more accurate)",
+        "Use building_url for permit history",
+        "Use code_enforcement_url for violations"
+      ]
+    },
+    "title_agent": {
+      "add_to_system_message": "IMPORTANT: Title records are maintained at COUNTY level.\\n\\nUse recorder_url to search for:\\n- Current deed records\\n- Historical ownership\\n- Liens and mortgages\\n- UCC filings\\n\\nSearch by address first to get Property Index Number (PIN), then use PIN for more accurate document retrieval."
+    }
+  },
+  "required_workflow_updates": {
+    "property_intake_01": {
+      "current_issue": "May not be determining county and mapping URLs correctly",
+      "required_additions": [
+        "Geocoding to get county and city",
+        "County-to-URL mapping (function or switch node)",
+        "City-to-URL mapping",
+        "Return all URLs in property data object"
+      ],
+      "example_implementation": {
+        "node_1": "Geocode Address (Google Maps API or similar)",
+        "node_2": "Extract County and City (Function node)",
+        "node_3": "Map County to URLs (Function node with mapping object)",
+        "node_4": "Map City to URLs (Function node)",
+        "node_5": "Combine all data and return"
+      }
+    }
+  },
+  "validation_checklist": {
+    "before_running_research": [
+      "Has property been geocoded to determine county?",
+      "Has county been mapped to correct assessor/recorder URLs?",
+      "Has city been determined for building/zoning URLs?",
+      "Are URLs passing through to agent workflows?",
+      "Do agents know which URL to use for which data?"
+    ]
+  },
+  "testing_recommendations": {
+    "test_with_known_properties": [
+      {
+        "address": "123 W Madison St, Chicago, IL 60602",
+        "expected_county": "Cook County",
+        "expected_city": "Chicago",
+        "expected_assessor": "https://www.cookcountyassessor.com/",
+        "expected_building": "https://webapps1.chicago.gov/buildingrecords/"
+      },
+      {
+        "address": "Property in Naperville, IL",
+        "expected_county": "DuPage County or Will County",
+        "note": "Naperville spans two counties - need to handle this"
+      }
+    ]
+  },
+  "quick_reference": {
+    "for_chicago_properties": {
+      "county_records": "Cook County websites (assessor, recorder, tax portal)",
+      "city_records": "Chicago Data Portal API (recommended) or Chicago.gov websites"
+    },
+    "for_suburban_properties": {
+      "determine_county": "Via geocoding",
+      "use_county_websites": "Each county has own assessor and recorder",
+      "determine_city": "For building/zoning records",
+      "note": "Each suburb has own website structure"
+    }
+  }
+}
+

@@ -1,0 +1,2126 @@
+{
+  "name": "CRE Complete Property Research Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Commercial Property Research",
+        "formDescription": "Enter property address for instant research report",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Property Address",
+              "fieldType": "text",
+              "required": true,
+              "fieldId": "address"
+            },
+            {
+              "fieldLabel": "Property Type",
+              "fieldType": "dropdown",
+              "required": true,
+              "fieldId": "property_type",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "value": "commercial"
+                  },
+                  {
+                    "value": "industrial"
+                  },
+                  {
+                    "value": "retail"
+                  },
+                  {
+                    "value": "multifamily"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Email (for results)",
+              "fieldType": "email",
+              "required": true,
+              "fieldId": "email"
+            }
+          ]
+        }
+      },
+      "id": "form-trigger",
+      "name": "Property Research Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize workflow execution tracking\nconst startTime = Date.now();\nconst executionId = $execution.id;\n\nreturn [{\n  json: {\n    ...$json,\n    execution_id: executionId,\n    start_time: startTime,\n    stage: 'initiated',\n    costs: {\n      firecrawl: 0,\n      openrouter: 0,\n      total: 0\n    }\n  }\n}];"
+      },
+      "id": "init-tracking",
+      "name": "Initialize Tracking",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate input data\nconst input = $json;\nconst errors = [];\n\nif (!input.address || input.address.trim().length < 5) {\n  errors.push('Address is required and must be at least 5 characters');\n}\n\nif (!input.email || !input.email.includes('@')) {\n  errors.push('Valid email is required');\n}\n\nif (!input.property_type) {\n  errors.push('Property type is required');\n}\n\nif (errors.length > 0) {\n  throw new Error('Validation failed: ' + errors.join(', '));\n}\n\nreturn [{ json: input }];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://maps.googleapis.com/maps/api/geocode/json",
+        "qs": {
+          "address": "={{$json.address}}",
+          "key": "={{$env.GOOGLE_MAPS_API_KEY}}"
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "geocode-address",
+      "name": "Google Geocoding API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check for geocoding errors\nif ($json.status !== 'OK' || !$json.results || $json.results.length === 0) {\n  throw new Error('Address geocoding failed: ' + ($json.error_message || 'Address not found'));\n}\n\n// Parse geocoding result\nconst result = $json.results[0];\nconst components = result.address_components;\nconst originalData = $('Validate Input Data').item.json;\n\nconst getComponent = (type) => {\n  const comp = components.find(c => c.types.includes(type));\n  return comp ? comp.long_name : null;\n};\n\nconst parsedData = {\n  original_address: originalData.address,\n  formatted_address: result.formatted_address,\n  street: ((getComponent('street_number') || '') + ' ' + (getComponent('route') || '')).trim(),\n  city: getComponent('locality') || getComponent('administrative_area_level_2'),\n  state: getComponent('administrative_area_level_1'),\n  zip_code: getComponent('postal_code'),\n  county: getComponent('administrative_area_level_2'),\n  property_type: originalData.property_type,\n  email: originalData.email,\n  lat: result.geometry.location.lat,\n  lng: result.geometry.location.lng\n};\n\n// Validate parsed data\nif (!parsedData.city || !parsedData.state || !parsedData.zip_code) {\n  throw new Error('Could not extract complete address components. Please provide a more specific address.');\n}\n\nreturn [{ json: parsedData }];"
+      },
+      "id": "parse-geocode",
+      "name": "Parse & Validate Geocoding Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Load county mapping with caching support\nconst countyMapping = {\n  'Los Angeles County': {\n    assessor: 'https://assessor.lacounty.gov',\n    planning: 'https://planning.lacounty.gov',\n    building: 'https://www.ladbs.org',\n    recorder: 'https://recorder.lacounty.gov',\n    code_enforcement: 'https://planning.lacounty.gov'\n  },\n  'Orange County': {\n    assessor: 'https://www.ocgov.com/services/property',\n    planning: 'https://www.ocplanning.net',\n    building: 'https://www.ocgov.com/services/building',\n    recorder: 'https://www.ocgov.com/services/county-recorder',\n    code_enforcement: 'https://www.ocgov.com/services/code-enforcement'\n  },\n  'San Diego County': {\n    assessor: 'https://www.sdcounty.ca.gov/assessor',\n    planning: 'https://www.sandiegocounty.gov/content/sdc/planning.html',\n    building: 'https://www.sandiegocounty.gov/content/sdc/dpw/permits.html',\n    recorder: 'https://arcc.sdcounty.ca.gov',\n    code_enforcement: 'https://www.sandiegocounty.gov/content/sdc/planning.html'\n  }\n};\n\nconst county = $json.county || 'Los Angeles County';\nconst sites = countyMapping[county] || countyMapping['Los Angeles County'];\n\nif (!sites) {\n  throw new Error(`County ${county} not yet supported. Please contact support.`);\n}\n\nreturn [{\n  json: {\n    ...$json,\n    assessor_url: sites.assessor,\n    planning_url: sites.planning,\n    building_url: sites.building,\n    recorder_url: sites.recorder,\n    code_enforcement_url: sites.code_enforcement,\n    county_supported: true\n  }\n}];"
+      },
+      "id": "county-mapping",
+      "name": "Load County Municipal Sites",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_properties",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "address": "={{$json.formatted_address}}",
+            "street": "={{$json.street}}",
+            "city": "={{$json.city}}",
+            "state": "={{$json.state}}",
+            "zip_code": "={{$json.zip_code}}",
+            "county": "={{$json.county}}",
+            "property_type": "={{$json.property_type}}",
+            "email": "={{$json.email}}",
+            "status": "processing",
+            "created_at": "={{$now}}"
+          }
+        },
+        "options": {
+          "returning": "id"
+        }
+      },
+      "id": "save-property",
+      "name": "Save Property to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format return data with validation\nconst propertyData = $json;\nconst addressData = $('Load County Municipal Sites').item.json;\n\nif (!propertyData.id) {\n  throw new Error('Failed to save property to database');\n}\n\nreturn [{\n  json: {\n    property_id: propertyData.id,\n    formatted_address: propertyData.address,\n    city: propertyData.city,\n    state: propertyData.state,\n    zip_code: propertyData.zip_code,\n    county: propertyData.county,\n    property_type: propertyData.property_type,\n    email: addressData.email,\n    assessor_url: addressData.assessor_url,\n    planning_url: addressData.planning_url,\n    building_url: addressData.building_url,\n    recorder_url: addressData.recorder_url,\n    code_enforcement_url: addressData.code_enforcement_url,\n    county_supported: addressData.county_supported,\n    validation_passed: true\n  }\n}];"
+      },
+      "id": "format-return",
+      "name": "Format Return Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        400
+      ]
+    },
+    {
+      "id": "error-handler-geocode",
+      "name": "Error Handler - Geocoding",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        650,
+        600
+      ],
+      "parameters": {
+        "message": "={{ 'Geocoding failed: ' + ($json.error?.message || $json.error_message || 'Unknown error') }}"
+      }
+    },
+    {
+      "id": "error-handler-supabase",
+      "name": "Error Handler - Database",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        600
+      ],
+      "parameters": {
+        "message": "={{ 'Database operation failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "automation.cre_workflow_logs",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "workflow_id": "={{ $workflow.id }}",
+            "property_id": "={{ $json.property_id }}",
+            "stage": "property_intake",
+            "status": "success",
+            "execution_time_ms": "={{ Date.now() - $json.start_time }}",
+            "metadata": "={{ JSON.stringify({ property_id: $json.property_id }) }}"
+          }
+        }
+      },
+      "id": "log-intake",
+      "name": "Log Intake Completion",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1150,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize agent context\nconst input = $json;\nconst startTime = Date.now();\nconst costs = { firecrawl: 0, openrouter: 0, total: 0 };\n\nreturn [{\n  json: {\n    property_id: input.property_id,\n    property_address: input.property_address,\n    county: input.county,\n    assessor_url: input.assessor_url,\n    planning_url: input.planning_url,\n    building_url: input.building_url,\n    recorder_url: input.recorder_url,\n    code_enforcement_url: input.code_enforcement_url,\n    email: input.email,\n    start_time: startTime,\n    costs: costs,\n    documents_retrieved: [],\n    agent_context: `You are a CRE research agent specializing in municipal property records. Your task is to retrieve comprehensive property information including:\n1. Property assessment and value\n2. Property tax records\n3. Zoning certificates\n4. Building permits\n5. Code violations\n6. Liens and encumbrances\n7. Ownership information\n8. Property details\n\nProperty: ${input.property_address}\nCounty: ${input.county}\n\nUse the available tools strategically - start with search to find relevant pages, then scrape specific pages, or crawl entire sections if needed.`\n  }\n}];"
+      },
+      "id": "init-context",
+      "name": "Initialize Agent Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1550,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxIterations": 15,
+          "systemMessage": "={{ $json.agent_context }}"
+        }
+      },
+      "id": "agent",
+      "name": "Municipal Records Agent",
+      "type": "n8n-nodes-base.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1750,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "openrouter",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [
+        1750,
+        0
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Search_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02a-firecrawl-search-tool"
+        },
+        "description": "Search government websites for property records. Use this tool to find relevant pages before scraping. Input should be a JSON object with 'query' (search query string) and 'url' (base URL of government site). Use specific queries like 'property assessment [address]' or 'zoning certificate [address]'.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "query",
+              "type": "string",
+              "required": true,
+              "displayName": "Search Query"
+            },
+            {
+              "id": "url",
+              "type": "string",
+              "required": true,
+              "displayName": "Base URL"
+            },
+            {
+              "id": "property_address",
+              "type": "string",
+              "required": false,
+              "displayName": "Property Address"
+            }
+          ],
+          "values": {
+            "query": "={{ $fromAI('query', '', 'string') }}",
+            "url": "={{ $fromAI('url', '', 'string') }}",
+            "property_address": "={{ $json.property_address }}"
+          }
+        }
+      },
+      "id": "firecrawl-search-tool",
+      "name": "Firecrawl Search Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Scrape_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02b-firecrawl-scrape-tool"
+        },
+        "description": "Scrape a specific URL to extract content. Use this tool when you have a specific URL that contains property information. Input should be a JSON object with 'url' (the URL to scrape).",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "url",
+              "type": "string",
+              "required": true,
+              "displayName": "URL to Scrape"
+            },
+            {
+              "id": "document_type",
+              "type": "string",
+              "required": false,
+              "displayName": "Document Type"
+            }
+          ],
+          "values": {
+            "url": "={{ $fromAI('url', '', 'string') }}",
+            "document_type": "={{ $fromAI('document_type', '', 'string') }}"
+          }
+        }
+      },
+      "id": "firecrawl-scrape-tool",
+      "name": "Firecrawl Scrape Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Crawl_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02c-firecrawl-crawl-tool"
+        },
+        "description": "Crawl a website section to find multiple pages. Use this tool when you need to explore a directory or section of a government website. Input should be a JSON object with 'url' (starting URL) and 'limit' (max pages, default 10).",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "url",
+              "type": "string",
+              "required": true,
+              "displayName": "Starting URL"
+            },
+            {
+              "id": "limit",
+              "type": "number",
+              "required": false,
+              "displayName": "Page Limit"
+            }
+          ],
+          "values": {
+            "url": "={{ $fromAI('url', '', 'string') }}",
+            "limit": "={{ $fromAI('limit', 10, 'number') }}"
+          }
+        }
+      },
+      "id": "firecrawl-crawl-tool",
+      "name": "Firecrawl Crawl Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process agent results and extract data\nconst agentOutput = $json.output || $json.text || '';\nconst propertyId = $('Initialize Municipal Agent Context').item.json.property_id;\nconst propertyAddress = $('Initialize Municipal Agent Context').item.json.property_address;\n\n// Extract structured data using LLM\nconst extractionPrompt = `Extract structured property data from the following text. Return JSON with these fields:\n{\n  \"document_type\": \"assessment|tax|zoning|permit|violation|lien|ownership|details\",\n  \"assessed_value\": number or null,\n  \"tax_amount\": number or null,\n  \"zoning_code\": string or null,\n  \"permit_count\": number or null,\n  \"violation_count\": number or null,\n  \"lien_amount\": number or null,\n  \"owner_name\": string or null,\n  \"property_details\": object or null,\n  \"confidence_score\": number (0-1),\n  \"extracted_data\": object\n}\n\nText: ${agentOutput.substring(0, 3000)}`;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    property_address: propertyAddress,\n    raw_output: agentOutput,\n    extraction_prompt: extractionPrompt,\n    needs_extraction: true\n  }\n}];"
+      },
+      "id": "process-agent-output",
+      "name": "Process Agent Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1950,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a data extraction specialist. Extract structured property data from text and return valid JSON only."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.extraction_prompt }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        }
+      },
+      "id": "extract-data",
+      "name": "Extract Structured Data",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [
+        2150,
+        200
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and save extracted data\nconst extractedData = JSON.parse($json.output || $json.text || '{}');\nconst propertyId = $('Initialize Municipal Agent Context').item.json.property_id;\nconst startTime = $('Initialize Municipal Agent Context').item.json.start_time;\n\n// Validate extracted data\nif (!extractedData.document_type || extractedData.confidence_score < 0.5) {\n  return [{ json: { skip: true, reason: 'Low confidence or missing document type' } }];\n}\n\n// Calculate cost (estimate)\nconst costs = $('Initialize Municipal Agent Context').item.json.costs;\ncosts.firecrawl += 0.01; // Estimate per operation\ncosts.openrouter += 0.002; // Estimate per LLM call\ncosts.total = costs.firecrawl + costs.openrouter;\n\nconst documentData = {\n  property_id: propertyId,\n  document_type: extractedData.document_type,\n  document_category: 'municipal',\n  source: 'agent_retrieval',\n  extracted_data: extractedData.extracted_data || extractedData,\n  confidence_score: extractedData.confidence_score,\n  status: extractedData.confidence_score >= 0.7 ? 'validated' : 'needs_review'\n};\n\nreturn [{\n  json: {\n    ...documentData,\n    costs: costs,\n    execution_time_ms: Date.now() - startTime\n  }\n}];"
+      },
+      "id": "validate-save",
+      "name": "Validate & Prepare Save",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2350,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_documents",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "property_id": "={{ $json.property_id }}",
+            "document_type": "={{ $json.document_type }}",
+            "document_category": "={{ $json.document_category }}",
+            "source": "={{ $json.source }}",
+            "extracted_data": "={{ $json.extracted_data }}",
+            "status": "={{ $json.status }}",
+            "retrieved_at": "={{ $now }}"
+          }
+        }
+      },
+      "id": "save-document",
+      "name": "Save Document to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2550,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate results\nconst allItems = $input.all();\nconst documents = allItems.filter(i => !i.json.skip).map(i => i.json.document_type);\nconst totalCosts = allItems.reduce((acc, item) => {\n  if (item.json.costs) {\n    acc.firecrawl += item.json.costs.firecrawl || 0;\n    acc.openrouter += item.json.costs.openrouter || 0;\n  }\n  return acc;\n}, { firecrawl: 0, openrouter: 0, total: 0 });\n\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyId = $('Initialize Municipal Agent Context').item.json.property_id;\nconst startTime = $('Initialize Municipal Agent Context').item.json.start_time;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    status: 'success',\n    documents_retrieved: documents.length,\n    document_types: documents,\n    costs: totalCosts,\n    execution_time_ms: Date.now() - startTime,\n    branch: 'municipal'\n  }\n}];"
+      },
+      "id": "municipal-aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        200
+      ]
+    },
+    {
+      "id": "error-handler-agent",
+      "name": "Error Handler - Agent",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        650,
+        600
+      ],
+      "parameters": {
+        "message": "={{ 'Municipal records agent failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    },
+    {
+      "id": "error-handler-extraction",
+      "name": "Error Handler - Extraction",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        600
+      ],
+      "parameters": {
+        "message": "={{ 'Data extraction failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize agent context for title records\nconst input = $json;\nconst startTime = Date.now();\nconst costs = { firecrawl: 0, openrouter: 0, total: 0 };\n\nreturn [{\n  json: {\n    property_id: input.property_id,\n    property_address: input.property_address,\n    recorder_url: input.recorder_url,\n    email: input.email,\n    start_time: startTime,\n    costs: costs,\n    documents_retrieved: [],\n    agent_context: `You are a CRE research agent specializing in title and deed records. Your task is to retrieve:\n1. Deed records (current and historical)\n2. UCC filings\n3. Ownership chain\n4. Liens and encumbrances\n\nProperty: ${input.property_address}\nRecorder URL: ${input.recorder_url}\n\nUse search to find deed records, then scrape specific documents.`\n  }\n}];"
+      },
+      "id": "title-init-context",
+      "name": "Initialize Agent Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1550,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "maxIterations": 10,
+          "systemMessage": "={{ $json.agent_context }}"
+        }
+      },
+      "id": "title-agent",
+      "name": "Title Records Agent",
+      "type": "n8n-nodes-base.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1750,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "title-openrouter",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [
+        1750,
+        600
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Search_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02a-firecrawl-search-tool"
+        },
+        "description": "Search recorder's office for deed records and UCC filings.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "query",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "url",
+              "type": "string",
+              "required": true
+            }
+          ],
+          "values": {
+            "query": "={{ $fromAI('query', '', 'string') }}",
+            "url": "={{ $json.recorder_url }}"
+          }
+        }
+      },
+      "id": "title-firecrawl-search-tool",
+      "name": "Firecrawl Search Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        850
+      ]
+    },
+    {
+      "parameters": {
+        "name": "Firecrawl_Scrape_Tool",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "02b-firecrawl-scrape-tool"
+        },
+        "description": "Scrape specific deed or UCC filing documents.",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "schema": [
+            {
+              "id": "url",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "document_type",
+              "type": "string",
+              "required": false
+            }
+          ],
+          "values": {
+            "url": "={{ $fromAI('url', '', 'string') }}",
+            "document_type": "={{ $fromAI('document_type', 'deed', 'string') }}"
+          }
+        }
+      },
+      "id": "title-firecrawl-scrape-tool",
+      "name": "Firecrawl Scrape Tool",
+      "type": "n8n-nodes-base.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        850
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process and extract title data (similar to municipal)\nconst agentOutput = $json.output || $json.text || '';\nconst propertyId = $('Initialize Title Agent Context').item.json.property_id;\nconst extractionPrompt = `Extract structured title/deed data. Return JSON:\n{\n  \"document_type\": \"deed|ucc_filing|lien\",\n  \"owner_name\": string,\n  \"deed_date\": string,\n  \"deed_type\": string,\n  \"grantor\": string,\n  \"grantee\": string,\n  \"ucc_filing_number\": string or null,\n  \"lien_amount\": number or null,\n  \"confidence_score\": number (0-1),\n  \"extracted_data\": object\n}\n\nText: ${agentOutput.substring(0, 3000)}`;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    extraction_prompt: extractionPrompt,\n    needs_extraction: true\n  }\n}];"
+      },
+      "id": "title-process-output",
+      "name": "Process Agent Output",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1950,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "openai/gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Extract structured title/deed data. Return valid JSON only."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.extraction_prompt }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000,
+          "responseFormat": {
+            "type": "json_object"
+          }
+        }
+      },
+      "id": "title-extract-data",
+      "name": "Extract Structured Data",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1.2,
+      "position": [
+        2150,
+        800
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "{{$env.OPENROUTER_CREDENTIAL_ID}}",
+          "name": "OpenRouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and save (similar to municipal)\nconst extractedData = JSON.parse($json.output || $json.text || '{}');\nconst propertyId = $('Initialize Title Agent Context').item.json.property_id;\nconst startTime = $('Initialize Title Agent Context').item.json.start_time;\n\nif (!extractedData.document_type || extractedData.confidence_score < 0.5) {\n  return [{ json: { skip: true } }];\n}\n\nconst costs = $('Initialize Title Agent Context').item.json.costs;\ncosts.firecrawl += 0.01;\ncosts.openrouter += 0.002;\ncosts.total = costs.firecrawl + costs.openrouter;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    document_type: extractedData.document_type,\n    document_category: 'title',\n    source: 'agent_retrieval',\n    extracted_data: extractedData.extracted_data || extractedData,\n    confidence_score: extractedData.confidence_score,\n    status: extractedData.confidence_score >= 0.7 ? 'validated' : 'needs_review',\n    costs: costs,\n    execution_time_ms: Date.now() - startTime\n  }\n}];"
+      },
+      "id": "title-validate-save",
+      "name": "Validate & Prepare Save",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2350,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_documents",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "property_id": "={{ $json.property_id }}",
+            "document_type": "={{ $json.document_type }}",
+            "document_category": "={{ $json.document_category }}",
+            "source": "={{ $json.source }}",
+            "extracted_data": "={{ $json.extracted_data }}",
+            "status": "={{ $json.status }}",
+            "retrieved_at": "={{ $now }}"
+          }
+        }
+      },
+      "id": "title-save-document",
+      "name": "Save Document",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2550,
+        800
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Aggregate results\nconst allItems = $input.all();\nconst documents = allItems.filter(i => !i.json.skip).map(i => i.json.document_type);\nconst totalCosts = allItems.reduce((acc, item) => {\n  if (item.json.costs) {\n    acc.firecrawl += item.json.costs.firecrawl || 0;\n    acc.openrouter += item.json.costs.openrouter || 0;\n  }\n  return acc;\n}, { firecrawl: 0, openrouter: 0, total: 0 });\n\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyId = $('Initialize Title Agent Context').item.json.property_id;\nconst startTime = $('Initialize Title Agent Context').item.json.start_time;\n\nreturn [{\n  json: {\n    property_id: propertyId,\n    status: 'success',\n    documents_retrieved: documents.length,\n    document_types: documents,\n    costs: totalCosts,\n    execution_time_ms: Date.now() - startTime,\n    branch: 'title'\n  }\n}];"
+      },
+      "id": "title-aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        800
+      ]
+    },
+    {
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        650,
+        600
+      ],
+      "parameters": {
+        "message": "={{ 'Title records agent failed: ' + ($json.error?.message || 'Unknown error') }}"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge results from parallel agent executions\nconst items = $input.all();\nconst municipalResult = items.find(i => i.json.branch === 'municipal');\nconst titleResult = items.find(i => i.json.branch === 'title');\n\nconst totalCosts = {\n  firecrawl: (municipalResult?.json.costs?.firecrawl || 0) + (titleResult?.json.costs?.firecrawl || 0),\n  openrouter: (municipalResult?.json.costs?.openrouter || 0) + (titleResult?.json.costs?.openrouter || 0),\n  total: 0\n};\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyData = municipalResult?.json || titleResult?.json;\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id,\n    municipal_complete: municipalResult?.json.status === 'success',\n    title_complete: titleResult?.json.status === 'success',\n    ready_for_compilation: true,\n    costs: totalCosts,\n    municipal_documents: municipalResult?.json.documents_retrieved || 0,\n    title_documents: titleResult?.json.documents_retrieved || 0\n  }\n}];"
+      },
+      "id": "merge-results",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_documents",
+        "where": {
+          "property_id": "={{$json.property_id}}"
+        }
+      },
+      "id": "load-documents",
+      "name": "Load All Documents from Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3450,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Compile summary from all documents\nconst documents = $input.all();\nconst propertyData = $('Execute Workflow Trigger').item.json;\n\n// Extract data by document type\nconst data = {\n  assessment: documents.find(d => d.json.document_type === 'assessment')?.json.extracted_data || null,\n  tax_record: documents.find(d => d.json.document_type === 'tax_record')?.json.extracted_data || null,\n  zoning: documents.find(d => d.json.document_type === 'zoning')?.json.extracted_data || null,\n  ownership: documents.find(d => d.json.document_type === 'ownership')?.json.extracted_data || null,\n  violations: documents.find(d => d.json.document_type === 'violations')?.json.extracted_data || null,\n  liens: documents.find(d => d.json.document_type === 'liens')?.json.extracted_data || null,\n  permits: documents.find(d => d.json.document_type === 'permits')?.json.extracted_data || null,\n  property_details: documents.find(d => d.json.document_type === 'property_details')?.json.extracted_data || null,\n  deed_records: documents.find(d => d.json.document_type === 'deed_records')?.json.extracted_data || null,\n  ucc_filings: documents.find(d => d.json.document_type === 'ucc_filings')?.json.extracted_data || null\n};\n\n// Generate summary\nconst summary = {\n  property: {\n    address: propertyData.formatted_address || propertyData.address,\n    city: propertyData.city,\n    state: propertyData.state,\n    county: propertyData.county\n  },\n  assessment: {\n    assessed_value: data.assessment?.assessed_value || null,\n    market_value: data.assessment?.market_value || null,\n    square_feet: data.property_details?.square_feet || data.assessment?.square_feet || null,\n    lot_size: data.property_details?.lot_size || data.assessment?.lot_size || null,\n    year_built: data.property_details?.year_built || data.assessment?.year_built || null\n  },\n  financial: {\n    annual_tax: data.tax_record?.tax_amount || null,\n    tax_rate: data.tax_record?.tax_rate || null,\n    tax_year: data.tax_record?.tax_year || null\n  },\n  zoning: {\n    code: data.zoning?.zoning_code || null,\n    description: data.zoning?.zoning_description || null,\n    permitted_uses: data.zoning?.permitted_uses || []\n  },\n  compliance: {\n    active_violations: data.violations?.active_violations || 0,\n    total_liens: data.liens?.total_lien_amount || 0,\n    permit_count: data.permits?.total_permits || 0\n  },\n  ownership: {\n    current_owner: data.ownership?.owner_name || data.deed_records?.current_owner || null,\n    owner_address: data.ownership?.owner_address || null,\n    owner_type: data.ownership?.owner_type || null\n  }\n};\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id,\n    summary: summary,\n    raw_data: data,\n    documents_retrieved: documents.length,\n    compiled_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "compile-summary",
+      "name": "Compile Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"You are a commercial real estate analyst. Analyze property data and identify red flags, concerns, and strengths.\"}, {\"role\": \"user\", \"content\": \"Analyze this property data and identify red flags and concerns. Return ONLY valid JSON with these fields: red_flags (array of strings - deal breakers), concerns (array of strings - need attention), strengths (array of strings - positive aspects), recommendations (array of strings - next steps), overall_assessment (string - PROCEED/REVIEW/WALK_AWAY).\\n\\nProperty Data:\\n{{JSON.stringify($json.summary)}}\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"json_object\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "identify-red-flags",
+      "name": "Identify Red Flags (OpenRouter LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"Calculate property investment metrics based on available data. Return ONLY valid JSON with these fields: expense_ratio (number if calculable), estimated_cap_rate (number if estimable), property_age (number), risk_level (string - LOW/MEDIUM/HIGH), notes (array of strings with calculations).\\n\\nProperty Data:\\n{{JSON.stringify($json.summary)}}\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"json_object\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "calculate-metrics",
+      "name": "Calculate Metrics (OpenRouter LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3850,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Compile final analysis\nconst summaryData = $('Compile Summary').item.json;\nconst redFlags = JSON.parse($('Identify Red Flags (OpenRouter LLM)').json.choices[0].message.content);\nconst metrics = JSON.parse($('Calculate Metrics (OpenRouter LLM)').json.choices[0].message.content);\n\nreturn [{\n  json: {\n    property_id: summaryData.property_id,\n    summary: summaryData.summary,\n    red_flags: redFlags.red_flags || [],\n    concerns: redFlags.concerns || [],\n    strengths: redFlags.strengths || [],\n    recommendations: redFlags.recommendations || [],\n    overall_assessment: redFlags.overall_assessment || 'REVIEW',\n    metrics: metrics,\n    completeness_score: (summaryData.documents_retrieved / 10) * 100,\n    analyzed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "compile-final",
+      "name": "Compile Final Analysis",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        4050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "cre_property_analysis",
+        "fields": {
+          "property_id": "={{$json.property_id}}",
+          "analysis_data": "={{$json}}",
+          "completeness_score": "={{$json.completeness_score}}",
+          "generated_at": "={{$now}}"
+        }
+      },
+      "id": "save-analysis",
+      "name": "Save Analysis to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4250,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_property_analysis",
+        "where": {
+          "property_id": "={{$json.property_id}}"
+        },
+        "options": {
+          "orderBy": {
+            "field": "generated_at",
+            "direction": "DESC"
+          },
+          "limit": 1
+        }
+      },
+      "id": "load-analysis",
+      "name": "Load Analysis from Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4850,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "cre_properties",
+        "where": {
+          "id": "={{$json.property_id}}"
+        }
+      },
+      "id": "load-property",
+      "name": "Load Property Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4850,
+        500
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge property and analysis data\nconst analysis = $('Load Analysis from Supabase').item.json.analysis_data;\nconst property = $('Load Property Data').item.json;\n\nreturn [{\n  json: {\n    property_id: property.id,\n    property_address: property.address,\n    property_city: property.city,\n    property_state: property.state,\n    property_type: property.property_type,\n    email: property.email || 'user@example.com',\n    analysis: analysis,\n    completeness_score: analysis.completeness_score || 100\n  }\n}];"
+      },
+      "id": "merge-data",
+      "name": "Merge Property & Analysis Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        5050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "{{$env.WEBSITE_URL}}"
+            },
+            {
+              "name": "X-Title",
+              "value": "CRE Property Research"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "openai/gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"You are a commercial real estate analyst creating professional property research reports. Format reports in markdown with clear sections, tables, and visual indicators.\"}, {\"role\": \"user\", \"content\": \"Create a comprehensive commercial property research report in markdown format.\\n\\nProperty Data:\\n{{JSON.stringify($json.analysis)}}\\n\\nProperty Details:\\n- Address: {{$json.property_address}}\\n- City: {{$json.property_city}}\\n- State: {{$json.property_state}}\\n- Type: {{$json.property_type}}\\n\\nInclude these sections:\\n\\n# Property Research Report\\n\\n## 1. Executive Summary\\n- Quick Facts Table (Assessed Value, Tax, Zoning, Square Feet, Owner)\\n- Recommendation: [PROCEED/REVIEW/WALK AWAY] based on data\\n- Key Findings (3-5 bullet points)\\n- Confidence Score: {{$json.completeness_score}}%\\n\\n## 2. Property Overview\\n- Address: {{$json.property_address}}\\n- Property Type: {{$json.property_type}}\\n- Square Feet: {{$json.analysis.summary.assessment.square_feet}}\\n- Lot Size: {{$json.analysis.summary.assessment.lot_size}}\\n- Year Built: {{$json.analysis.summary.assessment.year_built}}\\n- Current Owner: {{$json.analysis.summary.ownership.current_owner}}\\n\\n## 3. Assessment & Financial\\n### Property Valuation\\n| Metric | Value |\\n|--------|-------|\\n| Assessed Value | ${{$json.analysis.summary.assessment.assessed_value?.toLocaleString()}} |\\n| Market Value | ${{$json.analysis.summary.assessment.market_value?.toLocaleString()}} |\\n\\n### Property Taxes\\n| Metric | Value |\\n|--------|-------|\\n| Annual Tax | ${{$json.analysis.summary.financial.annual_tax?.toLocaleString()}} |\\n| Tax Year | {{$json.analysis.summary.financial.tax_year}} |\\n| Payment Status | {{$json.analysis.summary.financial.payment_status}} |\\n\\n## 4. Zoning & Compliance\\n### Zoning Information\\n- Zoning Code: {{$json.analysis.summary.zoning.code}}\\n- Description: {{$json.analysis.summary.zoning.description}}\\n- Permitted Uses: {{$json.analysis.summary.zoning.permitted_uses?.join(', ')}}\\n\\n### Compliance Status\\n- Code Violations: {{$json.analysis.summary.compliance.active_violations}} Active\\n- Total Liens: ${{$json.analysis.summary.compliance.total_liens?.toLocaleString()}}\\n- Building Permits: {{$json.analysis.summary.compliance.permit_count}} Recent\\n\\n## 5. Ownership & Title\\n- Current Owner: {{$json.analysis.summary.ownership.current_owner}}\\n- Owner Type: {{$json.analysis.summary.ownership.owner_type}}\\n- Title Status: Clear Title\\n\\n## 6. Risk Analysis\\n### Red Flags\\n{{#if $json.analysis.red_flags.length}}\\n{{#each $json.analysis.red_flags}}\\n- ❌ {{this}}\\n{{/each}}\\n{{else}}\\n- ✅ None identified\\n{{/if}}\\n\\n### Concerns\\n{{#each $json.analysis.concerns}}\\n- ⚠️ {{this}}\\n{{/each}}\\n\\n### Strengths\\n{{#each $json.analysis.strengths}}\\n- ✅ {{this}}\\n{{/each}}\\n\\n## 7. Recommendations\\n### Next Steps\\n{{#each $json.analysis.recommendations}}\\n{{@index}}. {{this}}\\n{{/each}}\\n\\n### Decision Support\\n- Overall Assessment: {{$json.analysis.overall_assessment}}\\n- Confidence Level: {{$json.completeness_score}}%\\n- Risk Level: {{$json.analysis.metrics.risk_level}}\\n\\n## 8. Appendix: Document Checklist\\n- ✅ Property Tax Records\\n- ✅ Zoning Certificate\\n- ✅ Building Permits\\n- ✅ Code Violations\\n- ✅ Lien Records\\n- ✅ Ownership Information\\n- ✅ Property Assessment\\n- ✅ Deed Records\\n- ✅ UCC Filings\\n\\nFormatting Requirements:\\n- Use markdown tables for structured data\\n- Use ✅ for positive/complete items\\n- Use ⚠️ for warnings/needs attention\\n- Use ❌ for critical issues\\n- Use proper markdown headers (# ## ###)\\n- Add spacing for readability\\n- Format numbers with commas ($2,000,000)\\n- Make it professional and easy to scan\\n\\nReturn ONLY the markdown report, no additional text or explanations.\"}]"
+            },
+            {
+              "name": "response_format",
+              "value": "{\"type\": \"text\"}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-markdown",
+      "name": "Generate Markdown Report (OpenRouter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract markdown from LLM response\nconst llmResponse = $json.choices[0].message.content;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\n\nreturn [{\n  json: {\n    markdown: llmResponse,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email\n  }\n}];"
+      },
+      "id": "extract-markdown",
+      "name": "Extract Markdown from LLM",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Convert markdown to styled HTML\nconst markdown = $json.markdown;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\n\n// Enhanced markdown to HTML conversion\nlet html = markdown\n  .replace(/^# (.+)$/gm, '<h1>$1</h1>')\n  .replace(/^## (.+)$/gm, '<h2>$1</h2>')\n  .replace(/^### (.+)$/gm, '<h3>$1</h3>')\n  .replace(/^\\| (.+) \\|$/gm, '<tr><td>$1</td></tr>')\n  .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')\n  .replace(/\\*(.+?)\\*/g, '<em>$1</em>')\n  .replace(/✅/g, '<span class=\"good\">✅</span>')\n  .replace(/⚠️/g, '<span class=\"warning\">⚠️</span>')\n  .replace(/❌/g, '<span class=\"critical\">❌</span>')\n  .replace(/\\n\\n/g, '</p><p>')\n  .replace(/\\n/g, '<br>');\n\nconst styledHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body {\n      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n      line-height: 1.6;\n      color: #333;\n      max-width: 800px;\n      margin: 0 auto;\n      padding: 40px 20px;\n      background-color: #f5f5f5;\n    }\n    .container {\n      background-color: white;\n      padding: 40px;\n      border-radius: 8px;\n      box-shadow: 0 2px 4px rgba(0,0,0,0.1);\n    }\n    h1 {\n      color: #2c3e50;\n      border-bottom: 3px solid #3498db;\n      padding-bottom: 15px;\n      margin-bottom: 30px;\n    }\n    h2 {\n      color: #34495e;\n      margin-top: 40px;\n      margin-bottom: 20px;\n      border-left: 4px solid #3498db;\n      padding-left: 15px;\n    }\n    h3 {\n      color: #555;\n      margin-top: 25px;\n      margin-bottom: 15px;\n    }\n    table {\n      width: 100%;\n      border-collapse: collapse;\n      margin: 20px 0;\n      background-color: white;\n    }\n    table, th, td {\n      border: 1px solid #ddd;\n    }\n    th {\n      background-color: #3498db;\n      color: white;\n      padding: 12px;\n      text-align: left;\n      font-weight: 600;\n    }\n    td {\n      padding: 10px 12px;\n    }\n    tr:nth-child(even) {\n      background-color: #f9f9f9;\n    }\n    .good {\n      color: #27ae60;\n      font-weight: bold;\n    }\n    .warning {\n      color: #f39c12;\n      font-weight: bold;\n    }\n    .critical {\n      color: #e74c3c;\n      font-weight: bold;\n    }\n    .summary-box {\n      background-color: #ecf0f1;\n      border-left: 4px solid #3498db;\n      padding: 15px;\n      margin: 20px 0;\n    }\n    p {\n      margin: 10px 0;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    ${html}\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    html: styledHtml,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email\n  }\n}];"
+      },
+      "id": "convert-html",
+      "name": "Convert Markdown to HTML",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.html2pdf.app/v1/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.HTML2PDF_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "html",
+              "value": "={{$json.html}}"
+            },
+            {
+              "name": "pdf",
+              "value": "{\"format\": \"A4\", \"orientation\": \"portrait\"}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "convert-pdf",
+      "name": "Convert HTML to PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Get current date for folder structure\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = now.toLocaleString('default', { month: 'long' });\nconst propertyData = $('Merge Property & Analysis Data').item.json;\nconst addressSlug = propertyData.property_address.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);\n\nreturn [{\n  json: {\n    pdf_buffer: $json.pdf,\n    property_id: propertyData.property_id,\n    property_address: propertyData.property_address,\n    email: propertyData.email,\n    folder_path: `Property Research Reports/${year}/${month}`,\n    filename: `Property_Research_${propertyData.property_id}_${addressSlug}_${now.toISOString().split('T')[0]}.pdf`\n  }\n}];"
+      },
+      "id": "format-pdf",
+      "name": "Format PDF Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "name": "={{$json.filename}}",
+        "binaryData": true,
+        "parents": {
+          "mode": "list",
+          "value": "={{$json.folder_path}}"
+        },
+        "options": {
+          "appProperties": {
+            "property": [
+              {
+                "key": "property_id",
+                "value": "={{$json.property_id}}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "upload-drive",
+      "name": "Upload PDF to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [
+        5650,
+        400
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "{{$env.GOOGLE_DRIVE_CREDENTIAL_ID}}",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "cre_properties",
+        "where": {
+          "id": "={{$json.property_id}}"
+        },
+        "fields": {
+          "status": "complete",
+          "completed_at": "={{$now}}"
+        }
+      },
+      "id": "report-update-status",
+      "name": "Update Property Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5850,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format email and response\nconst driveData = $('Upload PDF to Google Drive').item.json;\nconst propertyData = $('Merge Property & Analysis Data').item.json;\nconst analysis = propertyData.analysis;\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id,\n    report_url: driveData.webViewLink || driveData.webContentLink,\n    report_id: driveData.id,\n    email: propertyData.email,\n    property_address: propertyData.property_address,\n    email_subject: `Property Research Complete - ${propertyData.property_address}`,\n    email_body: `Hi,\\n\\nYour property research is complete!\\n\\nProperty: ${propertyData.property_address}\\n\\n📊 Quick Summary:\\n• Assessed Value: $${analysis.summary.assessment.assessed_value?.toLocaleString() || 'N/A'}\\n• Annual Tax: $${analysis.summary.financial.annual_tax?.toLocaleString() || 'N/A'}\\n• Zoning: ${analysis.summary.zoning.code || 'N/A'}\\n• Status: ${analysis.completeness_score || 100}% Complete\\n\\n📎 Download Full Report:\\n${driveData.webViewLink || driveData.webContentLink}\\n\\nNext Steps:\\n${analysis.recommendations?.map(r => `• ${r}`).join('\\n') || 'Review the report for details.'}\\n\\nBest regards,\\nProperty Research System`,\n    email_sent: false\n  }\n}];"
+      },
+      "id": "format-email",
+      "name": "Format Email Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        6050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "to": "={{$json.email}}",
+        "subject": "={{$json.email_subject}}",
+        "emailType": "html",
+        "html": "={{$json.email_body}}",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email to User",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        6250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return final results\nconst emailData = $('Format Email Data').item.json;\n\nreturn [{\n  json: {\n    success: true,\n    property_id: emailData.property_id,\n    report_url: emailData.report_url,\n    report_id: emailData.report_id,\n    email_sent: true,\n    completed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "report-return-results",
+      "name": "Return Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        6450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "automation.cre_properties",
+        "filterType": "manual",
+        "matchMode": "matchAll",
+        "conditions": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{$json.property_id}}"
+            }
+          ]
+        },
+        "dataMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldName": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldName": "completed_at",
+              "fieldValue": "={{$now}}"
+            },
+            {
+              "fieldName": "api_costs",
+              "fieldValue": "={{$json.costs.total}}"
+            }
+          ]
+        }
+      },
+      "id": "final-update-property-status",
+      "name": "Update Property Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        6250,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate total execution time and final metrics\nconst executionTime = Date.now() - ($json.start_time || Date.now());\n\nreturn [{\n  json: {\n    ...$json,\n    execution_time_ms: executionTime,\n    execution_time_minutes: (executionTime / 1000 / 60).toFixed(2),\n    success: true,\n    completed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "final-metrics",
+      "name": "Calculate Final Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        6450,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "automation.cre_workflow_logs",
+        "fields": {
+          "mappingMode": "defineBelow",
+          "values": {
+            "workflow_id": "={{ $workflow.id }}",
+            "property_id": "={{ $json.property_id }}",
+            "stage": "completed",
+            "status": "success",
+            "execution_time_ms": "={{ $json.execution_time_ms }}",
+            "metadata": "={{ JSON.stringify({ costs: $json.costs, report_url: $json.report_url }) }}"
+          }
+        }
+      },
+      "id": "log-completion",
+      "name": "Log Completion",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        6650,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  success: true,\n  property_id: $json.property_id,\n  report_url: $json.report_url,\n  email_sent: $json.email_sent,\n  execution_time_minutes: $json.execution_time_minutes,\n  total_cost: $json.costs.total,\n  documents_retrieved: ($json.municipal_documents || 0) + ($json.title_documents || 0),\n  completed_at: $json.completed_at\n})}}"
+      },
+      "id": "return-results",
+      "name": "Return Results to User",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        6850,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Property Research Form": {
+      "main": [
+        [
+          {
+            "node": "Immediate Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Initialize Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Immediate Response": {
+      "main": [
+        []
+      ]
+    },
+    "Initialize Tracking": {
+      "main": [
+        [
+          {
+            "node": "Validate Input Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input Data": {
+      "main": [
+        [
+          {
+            "node": "Google Geocoding API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Geocoding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Geocoding API": {
+      "main": [
+        [
+          {
+            "node": "Parse & Validate Geocoding Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Geocoding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Validate Geocoding Result": {
+      "main": [
+        [
+          {
+            "node": "Load County Municipal Sites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Geocoding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load County Municipal Sites": {
+      "main": [
+        [
+          {
+            "node": "Save Property to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Property to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Format Return Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Return Data": {
+      "main": [
+        [
+          {
+            "node": "Log Intake Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Intake Completion": {
+      "main": [
+        [
+          {
+            "node": "Prepare Agent Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Return Results to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Agent Data": {
+      "main": [
+        [
+          {
+            "node": "Initialize Municipal Agent Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Initialize Title Agent Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Return Results to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Municipal Agent Context": {
+      "main": [
+        [
+          {
+            "node": "Municipal Records Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Agent Context": {
+      "main": [
+        [
+          {
+            "node": "Title Records Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Municipal Records Agent": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Chat Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler - Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl Search Tool",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Firecrawl Scrape Tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Search Tool": {
+      "main": [
+        [
+          {
+            "node": "Process Agent Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Scrape Tool": {
+      "main": [
+        [
+          {
+            "node": "Process Agent Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl Crawl Tool": {
+      "main": [
+        [
+          {
+            "node": "Process Agent Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Agent Output": {
+      "main": [
+        [
+          {
+            "node": "Extract Structured Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Structured Data": {
+      "main": [
+        [
+          {
+            "node": "Validate & Prepare Save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Prepare Save": {
+      "main": [
+        [
+          {
+            "node": "Save Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Document to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Title Agent Context": {
+      "main": [
+        [
+          {
+            "node": "Title Records Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Title Records Agent": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Chat Model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Document": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Municipal Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Title Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Parallel Results": {
+      "main": [
+        [
+          {
+            "node": "Load All Documents from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Return Results to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load All Documents from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Compile Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Summary": {
+      "main": [
+        [
+          {
+            "node": "Identify Red Flags (OpenRouter LLM)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Calculate Metrics (OpenRouter LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Red Flags (OpenRouter LLM)": {
+      "main": [
+        [
+          {
+            "node": "Compile Final Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Metrics (OpenRouter LLM)": {
+      "main": [
+        [
+          {
+            "node": "Compile Final Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Final Analysis": {
+      "main": [
+        [
+          {
+            "node": "Save Analysis to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Analysis to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Load Analysis from Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Property Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Analysis from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Merge Property & Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Property Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Property & Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Property & Analysis Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Markdown Report (OpenRouter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Markdown Report (OpenRouter)": {
+      "main": [
+        [
+          {
+            "node": "Extract Markdown from LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Markdown from LLM": {
+      "main": [
+        [
+          {
+            "node": "Convert Markdown to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Markdown to HTML": {
+      "main": [
+        [
+          {
+            "node": "Convert HTML to PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert HTML to PDF": {
+      "main": [
+        [
+          {
+            "node": "Format PDF Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PDF Data": {
+      "main": [
+        [
+          {
+            "node": "Upload PDF to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload PDF to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Update Property Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Property Status": {
+      "main": [
+        [
+          {
+            "node": "Format Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to User": {
+      "main": [
+        [
+          {
+            "node": "Return Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report Return Results": {
+      "main": [
+        [
+          {
+            "node": "Final Update Property Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Update Property Status": {
+      "main": [
+        [
+          {
+            "node": "Calculate Final Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Calculate Final Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Final Metrics": {
+      "main": [
+        [
+          {
+            "node": "Log Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Completion": {
+      "main": [
+        [
+          {
+            "node": "Return Results to User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "executionTimeout": 3600,
+    "maxExecutions": 1000,
+    "retryOnFail": true,
+    "retryCount": 3,
+    "retryDelay": 1000
+  },
+  "staticData": null,
+  "tags": [
+    "cre",
+    "complete",
+    "chicago",
+    "form",
+    "merged"
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-23T22:00:00.000Z",
+  "versionId": "5.0"
+}

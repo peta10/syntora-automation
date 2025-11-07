@@ -1,0 +1,435 @@
+{
+  "name": "CRE Master Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Commercial Property Research - Chicago Area",
+        "formDescription": "Get a comprehensive property research report in 5-10 minutes. Powered by AI agents.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Property Address",
+              "fieldType": "text",
+              "requiredField": true,
+              "fieldId": "address",
+              "placeholder": "123 W Madison St, Chicago, IL 60602"
+            },
+            {
+              "fieldLabel": "Property Type",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "fieldId": "property_type",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Commercial Office"
+                  },
+                  {
+                    "option": "Industrial Warehouse"
+                  },
+                  {
+                    "option": "Retail"
+                  },
+                  {
+                    "option": "Multifamily"
+                  },
+                  {
+                    "option": "Mixed Use"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Your Email",
+              "fieldType": "email",
+              "requiredField": true,
+              "fieldId": "email",
+              "placeholder": "your.email@company.com"
+            },
+            {
+              "fieldLabel": "Additional Notes (Optional)",
+              "fieldType": "textarea",
+              "requiredField": false,
+              "fieldId": "notes",
+              "placeholder": "Any specific information you're looking for?"
+            }
+          ]
+        },
+        "options": {
+          "formSubmittedText": "Thank you! Your property research is starting. You'll receive an email with the full report in 5-10 minutes."
+        }
+      },
+      "id": "form-trigger",
+      "name": "Property Research Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [250, 400],
+      "webhookId": "cre-property-research"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Initialize workflow execution tracking\nconst startTime = Date.now();\nconst executionId = $execution.id;\n\nreturn [{\n  json: {\n    address: $json.address,\n    property_type: $json.property_type,\n    email: $json.email,\n    notes: $json.notes || '',\n    execution_id: executionId,\n    start_time: startTime,\n    stage: 'initiated',\n    costs: {\n      firecrawl: 0,\n      openrouter: 0,\n      total: 0\n    }\n  }\n}];"
+      },
+      "id": "init-tracking",
+      "name": "Initialize Tracking",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "01-property-intake"
+        },
+        "waitForExecution": true,
+        "options": {}
+      },
+      "id": "execute-intake",
+      "name": "Execute Property Intake",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "table": "automation.cre_workflow_logs",
+        "dataMode": "defineBelow",
+        "columnsUi": {
+          "values": [
+            {
+              "column": "workflow_id",
+              "value": "={{ $workflow.id }}"
+            },
+            {
+              "column": "property_id",
+              "value": "={{ $('Execute Property Intake').item.json.property_id || $json.property_id }}"
+            },
+            {
+              "column": "stage",
+              "value": "property_intake"
+            },
+            {
+              "column": "status",
+              "value": "success"
+            },
+            {
+              "column": "execution_time_ms",
+              "value": "={{ Date.now() - $('Initialize Tracking').item.json.start_time }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({ property_id: $('Execute Property Intake').item.json.property_id || $json.property_id }) }}"
+            }
+          ]
+        }
+      },
+      "id": "log-intake",
+      "name": "Log Intake Completion",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "={{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare data for agent workflows - preserve property data from intake\nconst intakeData = $('Execute Property Intake').item.json;\n\nreturn [{\n  json: {\n    ...intakeData,\n    property_id: intakeData.property_id\n  }\n}];"
+      },
+      "id": "prepare-agent-data",
+      "name": "Prepare Agent Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [950, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "02-municipal-records-agent"
+        },
+        "waitForExecution": true,
+        "options": {}
+      },
+      "id": "execute-municipal",
+      "name": "Execute Municipal Records Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1150, 300]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "03-title-records-agent"
+        },
+        "waitForExecution": true,
+        "options": {}
+      },
+      "id": "execute-title",
+      "name": "Execute Title Records Agent",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1150, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Merge results from parallel agent executions - handle partial failures\nconst items = $input.all();\nconst municipalResult = items.find(i => i.json.branch === 'municipal') || { json: { status: 'error', costs: { firecrawl: 0, openrouter: 0, total: 0 }, documents_retrieved: 0 } };\nconst titleResult = items.find(i => i.json.branch === 'title') || { json: { status: 'error', costs: { firecrawl: 0, openrouter: 0, total: 0 }, documents_retrieved: 0 } };\n\nconst totalCosts = {\n  firecrawl: (municipalResult?.json.costs?.firecrawl || 0) + (titleResult?.json.costs?.firecrawl || 0),\n  openrouter: (municipalResult?.json.costs?.openrouter || 0) + (titleResult?.json.costs?.openrouter || 0),\n  total: 0\n};\ntotalCosts.total = totalCosts.firecrawl + totalCosts.openrouter;\n\nconst propertyData = municipalResult?.json || titleResult?.json || $('Log Intake Completion').item.json;\n\nreturn [{\n  json: {\n    property_id: propertyData.property_id || $('Log Intake Completion').item.json.property_id,\n    municipal_complete: municipalResult?.json.status === 'success',\n    title_complete: titleResult?.json.status === 'success',\n    ready_for_compilation: (municipalResult?.json.status === 'success' || titleResult?.json.status === 'success'),\n    costs: totalCosts,\n    municipal_documents: municipalResult?.json.documents_retrieved || 0,\n    title_documents: titleResult?.json.documents_retrieved || 0,\n    errors: {\n      municipal_failed: municipalResult?.json.status !== 'success',\n      title_failed: titleResult?.json.status !== 'success'\n    }\n  }\n}];"
+      },
+      "id": "merge-results",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1350, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "04-data-compilation-analysis"
+        },
+        "waitForExecution": true,
+        "options": {}
+      },
+      "id": "execute-compilation",
+      "name": "Execute Compilation & Analysis",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1550, 400]
+    },
+    {
+      "parameters": {
+        "mode": "executeOnce",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "05-report-generation"
+        },
+        "waitForExecution": true,
+        "options": {}
+      },
+      "id": "execute-report",
+      "name": "Execute Report Generation",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [1750, 400]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "automation.cre_properties",
+        "filterType": "manual",
+        "matchMode": "matchAll",
+        "conditions": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{$json.property_id}}"
+            }
+          ]
+        },
+        "dataMode": "defineBelow",
+        "columnsUi": {
+          "values": [
+            {
+              "column": "status",
+              "value": "completed"
+            },
+            {
+              "column": "completed_at",
+              "value": "={{$now}}"
+            },
+            {
+              "column": "api_costs",
+              "value": "={{$json.costs.total}}"
+            }
+          ]
+        }
+      },
+      "id": "update-property-status",
+      "name": "Update Property Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1950, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "={{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate total execution time and final metrics\nconst executionTime = Date.now() - ($('Initialize Tracking').item.json.start_time || Date.now());\n\nreturn [{\n  json: {\n    ...$json,\n    execution_time_ms: executionTime,\n    execution_time_minutes: (executionTime / 1000 / 60).toFixed(2),\n    success: true,\n    completed_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "final-metrics",
+      "name": "Calculate Final Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2150, 400]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "table": "automation.cre_workflow_logs",
+        "dataMode": "defineBelow",
+        "columnsUi": {
+          "values": [
+            {
+              "column": "workflow_id",
+              "value": "={{ $workflow.id }}"
+            },
+            {
+              "column": "property_id",
+              "value": "={{ $json.property_id }}"
+            },
+            {
+              "column": "stage",
+              "value": "completed"
+            },
+            {
+              "column": "status",
+              "value": "success"
+            },
+            {
+              "column": "execution_time_ms",
+              "value": "={{ $json.execution_time_ms }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({ costs: $json.costs, report_url: $json.report_url }) }}"
+            }
+          ]
+        }
+      },
+      "id": "log-completion",
+      "name": "Log Completion",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2350, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "={{$env.SUPABASE_CREDENTIAL_ID}}",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  success: true,\n  message: 'Property research started! You will receive an email with the full report in 5-10 minutes.',\n  property_id: $json.property_id || 'pending',\n  started_at: new Date().toISOString()\n})}}"
+      },
+      "id": "immediate-response",
+      "name": "Immediate Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  success: $json.success !== false,\n  property_id: $json.property_id,\n  report_url: $json.report_url || 'N/A',\n  email_sent: $json.email_sent || false,\n  execution_time_minutes: $json.execution_time_minutes || '0.00',\n  total_cost: $json.costs?.total || 0,\n  documents_retrieved: ($json.municipal_documents || 0) + ($json.title_documents || 0),\n  completed_at: $json.completed_at,\n  errors: $json.errors || []\n})}}"
+      },
+      "id": "return-results",
+      "name": "Return Results to User",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2550, 400]
+    }
+  ],
+  "connections": {
+    "Property Research Form": {
+      "main": [[
+        { "node": "Immediate Response", "type": "main", "index": 0 },
+        { "node": "Initialize Tracking", "type": "main", "index": 0 }
+      ]]
+    },
+    "Immediate Response": {
+      "main": [[]]
+    },
+    "Initialize Tracking": {
+      "main": [[{ "node": "Execute Property Intake", "type": "main", "index": 0 }]]
+    },
+    "Execute Property Intake": {
+      "main": [[{ "node": "Log Intake Completion", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Return Results to User", "type": "main", "index": 0 }]]
+    },
+    "Log Intake Completion": {
+      "main": [[{ "node": "Prepare Agent Data", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Return Results to User", "type": "main", "index": 0 }]]
+    },
+    "Prepare Agent Data": {
+      "main": [[
+        { "node": "Execute Municipal Records Agent", "type": "main", "index": 0 },
+        { "node": "Execute Title Records Agent", "type": "main", "index": 0 }
+      ]],
+      "error": [[{ "node": "Return Results to User", "type": "main", "index": 0 }]]
+    },
+    "Execute Municipal Records Agent": {
+      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]]
+    },
+    "Execute Title Records Agent": {
+      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]]
+    },
+    "Merge Parallel Results": {
+      "main": [[{ "node": "Execute Compilation & Analysis", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Return Results to User", "type": "main", "index": 0 }]]
+    },
+    "Execute Compilation & Analysis": {
+      "main": [[{ "node": "Execute Report Generation", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Execute Report Generation", "type": "main", "index": 0 }]]
+    },
+    "Execute Report Generation": {
+      "main": [[{ "node": "Update Property Status", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Update Property Status", "type": "main", "index": 0 }]]
+    },
+    "Update Property Status": {
+      "main": [[{ "node": "Calculate Final Metrics", "type": "main", "index": 0 }]],
+      "error": [[{ "node": "Calculate Final Metrics", "type": "main", "index": 0 }]]
+    },
+    "Calculate Final Metrics": {
+      "main": [[{ "node": "Log Completion", "type": "main", "index": 0 }]]
+    },
+    "Log Completion": {
+      "main": [[{ "node": "Return Results to User", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": null,
+    "timezone": "UTC",
+    "executionTimeout": 3600,
+    "maxExecutions": 1000,
+    "retryOnFail": true,
+    "retryCount": 3,
+    "retryDelay": 1000
+  },
+  "staticData": null,
+  "tags": ["cre", "orchestrator", "chicago", "form"],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-03T00:00:00.000Z",
+  "versionId": "4.1"
+}
