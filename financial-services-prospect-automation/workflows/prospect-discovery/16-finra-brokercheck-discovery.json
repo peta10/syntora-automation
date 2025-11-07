@@ -1,0 +1,337 @@
+{
+  "name": "FINRA BrokerCheck Discovery",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate search parameters for FINRA BrokerCheck\n// Search for financial advisors in target locations\n\nconst targetLocations = [\n  { city: 'Chicago', state: 'IL', priority: 1 },\n  { city: 'New York', state: 'NY', priority: 1 },\n  { city: 'Los Angeles', state: 'CA', priority: 2 },\n  { city: 'San Francisco', state: 'CA', priority: 2 },\n  { city: 'Dallas', state: 'TX', priority: 2 },\n  { city: 'Miami', state: 'FL', priority: 3 },\n  { city: 'Boston', state: 'MA', priority: 2 },\n  { city: 'Seattle', state: 'WA', priority: 3 }\n];\n\n// Return search parameters for each location\nreturn targetLocations.map((location, index) => ({\n  json: {\n    city: location.city,\n    state: location.state,\n    priority: location.priority,\n    search_id: `finra_${location.state}_${index}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "generate-search-params",
+      "name": "Generate Search Parameters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.brokercheck.finra.org/search/firm",
+        "authentication": "none",
+        "method": "GET",
+        "qs": {
+          "hl": "true",
+          "nrows": "50",
+          "query": "={{ $json.city + ' ' + $json.state }}",
+          "r": "25",
+          "sort": "score",
+          "start": "0"
+        },
+        "options": {
+          "timeout": 30000,
+          "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "search-finra-firms",
+      "name": "Search FINRA Firms",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse FINRA BrokerCheck search results\nconst response = $json;\n\n// Check for results\nif (!response.hits || !response.hits.hits || response.hits.hits.length === 0) {\n  console.log('No results from FINRA BrokerCheck');\n  return [];\n}\n\nconst firms = response.hits.hits;\n\nconsole.log(`Found ${firms.length} firms from FINRA BrokerCheck`);\n\n// Extract firm data\nreturn firms.map((hit) => {\n  const firm = hit._source || {};\n  \n  return {\n    json: {\n      firm_name: firm.bc_firm_name || firm.firm_name || '',\n      crd_number: firm.firm_crd_nb || '',\n      firm_type: firm.firm_type || 'broker_dealer',\n      street_address: firm.bc_street_address_line_1 || '',\n      city: firm.bc_city || '',\n      state: firm.bc_state || '',\n      zip: firm.bc_zip_code || '',\n      phone: firm.bc_phone_number || '',\n      website: firm.bc_firm_website || firm.firm_website || '',\n      registered_advisors: firm.total_registered_persons || 0,\n      branch_offices: firm.total_branch_offices || 0,\n      discovery_source: 'finra_brokercheck',\n      is_regulatory_verified: true,\n      discovered_at: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "parse-finra-results",
+      "name": "Parse FINRA Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.firm_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.crd_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        }
+      },
+      "id": "filter-valid-firms",
+      "name": "Filter Valid Firms",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Enrich firm data - get website if missing\nconst firm = $json;\n\n// If no website, prepare for Brave lookup\nif (!firm.website || firm.website === '') {\n  return {\n    json: {\n      ...firm,\n      needs_website_lookup: true,\n      search_query: `${firm.firm_name} ${firm.city} ${firm.state} financial advisor`\n    }\n  };\n}\n\n// Parse and clean website URL\nlet website = firm.website;\nif (!website.startsWith('http')) {\n  website = `https://${website}`;\n}\n\ntry {\n  const url = new URL(website);\n  const domain = url.hostname.replace('www.', '');\n  \n  return {\n    json: {\n      ...firm,\n      company_website: website,\n      company_domain: domain,\n      needs_website_lookup: false\n    }\n  };\n} catch {\n  return {\n    json: {\n      ...firm,\n      needs_website_lookup: true,\n      search_query: `${firm.firm_name} ${firm.city} ${firm.state}`\n    }\n  };\n}"
+      },
+      "id": "enrich-website",
+      "name": "Enrich Website Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needs_website_lookup }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-needs-website",
+      "name": "Needs Website Lookup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "qs": {
+          "q": "={{ $json.search_query }}",
+          "count": "3"
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "lookup-website-brave",
+      "name": "Lookup Website (Brave)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "your-brave-api-credential-id",
+          "name": "Brave Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract website from Brave search results\nconst braveResults = $json.web?.results || [];\nconst firmData = $node[\"Enrich Website Data\"].json;\n\nif (braveResults.length === 0) {\n  console.log('No website found for:', firmData.firm_name);\n  return {\n    json: {\n      ...firmData,\n      company_website: '',\n      company_domain: '',\n      needs_website_lookup: false\n    }\n  };\n}\n\n// Get first result URL\nconst firstResult = braveResults[0];\nconst website = firstResult.url;\n\ntry {\n  const url = new URL(website);\n  const domain = url.hostname.replace('www.', '');\n  \n  console.log(`Found website for ${firmData.firm_name}: ${website}`);\n  \n  return {\n    json: {\n      ...firmData,\n      company_website: website,\n      company_domain: domain,\n      needs_website_lookup: false\n    }\n  };\n} catch {\n  return {\n    json: {\n      ...firmData,\n      company_website: website,\n      company_domain: '',\n      needs_website_lookup: false\n    }\n  };\n}"
+      },
+      "id": "extract-website",
+      "name": "Extract Website from Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare final prospect data for Supabase\nconst firm = $json;\n\nconst crypto = require('crypto');\n\n// Generate prospect_id from CRD number\nconst prospectId = `finra_${firm.crd_number}`;\n\n// Try to generate email hash if we have a domain\nlet emailHash = null;\nif (firm.company_domain) {\n  const genericEmail = `info@${firm.company_domain}`;\n  emailHash = crypto.createHash('md5').update(genericEmail.toLowerCase().trim()).digest('hex');\n}\n\n// Determine industry based on firm type\nlet industry = 'financial_advisors';\nif (firm.firm_type && firm.firm_type.includes('investment')) {\n  industry = 'wealth_management';\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    company_name: firm.firm_name,\n    company_domain: firm.company_domain || '',\n    company_website: firm.company_website || '',\n    industry: industry,\n    discovery_source: 'finra_brokercheck',\n    is_regulatory_verified: true,\n    regulatory_data: {\n      crd_number: firm.crd_number,\n      firm_type: firm.firm_type,\n      registered_advisors: firm.registered_advisors,\n      branch_offices: firm.branch_offices\n    },\n    company_intelligence: {\n      street_address: firm.street_address,\n      city: firm.city,\n      state: firm.state,\n      zip: firm.zip,\n      phone: firm.phone\n    },\n    status: 'discovered',\n    discovered_at: new Date().toISOString(),\n    email_hash: emailHash\n  }\n};"
+      },
+      "id": "prepare-supabase-data",
+      "name": "Prepare Supabase Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "fs_prospects",
+        "options": {}
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'finra_brokercheck_discovery',\n  firms_discovered: items.length,\n  discovery_source: 'finra_brokercheck',\n  is_regulatory_data: true,\n  timestamp: new Date().toISOString()\n};\n\nconsole.log(`FINRA BrokerCheck Discovery Complete: ${items.length} firms saved`);\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Search Parameters": {
+      "main": [
+        [
+          {
+            "node": "Search FINRA Firms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search FINRA Firms": {
+      "main": [
+        [
+          {
+            "node": "Parse FINRA Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse FINRA Results": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Firms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Firms": {
+      "main": [
+        [
+          {
+            "node": "Enrich Website Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Website Data": {
+      "main": [
+        [
+          {
+            "node": "Needs Website Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Website Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Website (Brave)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Supabase Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Website (Brave)": {
+      "main": [
+        [
+          {
+            "node": "Extract Website from Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Website from Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Supabase Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Supabase Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["financial-services", "discovery", "regulatory", "finra", "financial-advisors"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-08T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,464 @@
+{
+  "name": "AI News Executive Digest - Daily Briefing",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "14d9076e-27ea-4846-8b44-f83cf4022b9e",
+              "name": "response",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1000,
+        240
+      ],
+      "id": "30dc56dc-73fa-45fb-a1ed-2dcf07d3c3ac",
+      "name": "Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f2a8ff2d-6b59-4ad6-a2e7-8705354f4105",
+              "name": "response",
+              "value": "Error occurred during research. Please try again.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1000,
+        440
+      ],
+      "id": "987d012b-3d82-4731-b4b3-d25d4baa17da",
+      "name": "Try Again"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.executivePrompt }}",
+        "options": {
+          "systemMessage": "=You are an elite strategic intelligence analyst for C-Suite executives.\n\n**Core Responsibilities:**\n- Research breaking AI developments with business significance\n- Filter noise from strategic shifts\n- Translate technical → business implications\n- Identify competitive threats and opportunities\n- Surface actionable intelligence\n- Consolidate duplicate stories into concise summaries\n\n**Research Methodology:**\n1. Use ALL THREE tools systematically:\n   - Web Search Tool: Breaking news discovery across all categories\n   - Web Scrape Tool: Deep dive on key articles and priority URLs\n   - Web Crawl Tool: Company blog exploration (Anthropic, OpenAI, Google)\n\n2. Prioritize by executive relevance:\n   - HIGH: Major moves, capability shifts, market trends, foundational model pivots\n   - MEDIUM: Incremental improvements, minor launches\n   - LOW: Minor technical updates without business impact\n\n3. Source credibility hierarchy:\n   - Tier 1: Official announcements, SEC filings, company blogs\n   - Tier 2: Bloomberg, TechCrunch, WSJ, VentureBeat\n   - Tier 3: McKinsey, Gartner, Forrester, academic institutions\n\n4. Consolidation Strategy:\n   - If multiple sources report same story, combine into one entry\n   - Include all relevant sources in one consolidated summary\n   - Avoid duplicate entries\n   - Focus on comprehensive yet concise coverage\n\n**Communication:**\n- Lead with \"Why This Matters\" for busy executives\n- Use business metrics (revenue, market share, efficiency gains)\n- Avoid jargon - translate technical to business language\n- Example: \"OpenAI's model shows human-level performance enabling new legal/medical AI use cases\" NOT \"GPT-4 achieved 89.5% on MMLU\"\n- For model updates, highlight strategic pivots: Claude = coding focus, ChatGPT = ease of use/adoption\n\n**Output Structure:**\nOrganize by category with:\n- Top 3-5 most important developments per category (quality over quantity)\n- Each with: headline, summary, business impact, source URL, competitive implications\n- Strategic synthesis at category level\n- Consolidated summaries when multiple sources cover same story\n\nBe thorough - use tools multiple times across different queries. Executives depend on complete yet concise intelligence.",
+          "maxIterations": 30
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        720,
+        340
+      ],
+      "id": "e8d1344d-eaac-43e2-9a86-2a2856bb8f68",
+      "name": "AI Agent - Executive Intelligence",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## 📊 AI News Executive Digest\n\n**Daily Intelligence Briefing for C-Suite**\n\nAutomated workflow delivering strategic AI intelligence focused on business impact, competitive positioning, and market opportunities.\n\n**Research Categories:**\n- Strategic Moves & Market Impact\n- Foundation Model Updates (Claude, ChatGPT, Gemini)\n- Enterprise Tools & Automation\n- Industry Trends & Analysis\n- Breakthrough Innovations",
+        "height": 360,
+        "width": 450
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        80
+      ],
+      "id": "da34fbba-38d6-4919-96c6-0c7cef65559e",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "description": "Search breaking AI news and strategic developments across the web",
+        "workflowId": {
+          "__rl": true,
+          "value": "HQos9p9Z70mgDGSL",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/HQos9p9Z70mgDGSL",
+          "cachedResultName": "AI News - Web Search Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "searchPhrase": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('searchPhrase', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "searchPhrase",
+              "displayName": "searchPhrase",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        660
+      ],
+      "id": "b8ea6fa8-eb65-44bd-8fd5-598cdcb70a83",
+      "name": "Web Search Tool"
+    },
+    {
+      "parameters": {
+        "description": "Extract detailed content from specific URLs for in-depth analysis",
+        "workflowId": {
+          "__rl": true,
+          "value": "RWo2o7HlRWOlOzWa",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/RWo2o7HlRWOlOzWa",
+          "cachedResultName": "AI News - Web Scrape Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payload": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('payload', `This tool expects a payload 'object'. Here's an example :\n\n{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2\n  }\n}`, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "payload",
+              "displayName": "payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        944,
+        660
+      ],
+      "id": "c8a9d4aa-7213-4905-b497-f1affef161f2",
+      "name": "Web Scrape Tool"
+    },
+    {
+      "parameters": {
+        "description": "Explore company blogs and news sections in depth to find latest posts and announcements",
+        "workflowId": {
+          "__rl": true,
+          "value": "G5f1ezKqJyumjX86",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/G5f1ezKqJyumjX86",
+          "cachedResultName": "AI News - Web Crawl Tool"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payload": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('payload', `This tool expects a payload 'object'. Here's an example:\n\n{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2,\n    \"max_pages\": 25\n  }\n}`, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "payload",
+              "displayName": "payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        660
+      ],
+      "id": "1b898148-4b67-4647-861a-8d5dd68a0aff",
+      "name": "Web Crawl Tool"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        },
+        "options": {
+          "timezone": "America/Chicago"
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        340
+      ],
+      "id": "800b1915-3c5c-4cad-804d-41fbfd91e3c1",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toLocaleDateString('en-US', { \n  weekday: 'long', \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\nconst executivePrompt = `You are a strategic AI intelligence analyst preparing a daily briefing for C-Suite executives on ${today}.\n\n**Mission:** Research the most strategically important AI developments in the last 24-48 hours. Focus on BUSINESS IMPACT over technical details.\n\n**Key Categories to Research:**\n\n1. **Strategic Moves & Market Impact**\n   - Major funding rounds, acquisitions, partnerships\n   - Search: \"AI company funding 2025\", \"AI acquisition news\", \"major AI partnership\", \"enterprise AI adoption trends\"\n   - Sources: Crunchbase, TechCrunch, Bloomberg, VentureBeat\n\n2. **Foundation Model Updates**  \n   - Claude, ChatGPT, Gemini capability updates and pivots\n   - Search: \"Claude latest update 2025\", \"ChatGPT new features announced\", \"Gemini AI update\", \"OpenAI announcements\", \"Anthropic Claude pivots\"\n   - Priority URLs: anthropic.com/news, openai.com/news, blog.google/technology/google-deepmind\n   - Focus: Where are these models pivoting? Claude = coder's best buddy, ChatGPT = ease of use & adoption\n\n3. **Enterprise Tools & Automation**\n   - Business-ready AI tools launching\n   - Search: \"enterprise AI tools launched today\", \"AI productivity tools 2025\", \"business automation AI platform\", \"AI agent platform business\"\n   - Sources: Product Hunt, TechCrunch, VentureBeat\n\n4. **Industry Trends & Analysis**\n   - Market trends, adoption patterns, expert analysis\n   - Search: \"AI industry trends 2025\", \"enterprise AI adoption statistics\", \"AI market forecast 2025\", \"CEO AI strategy insights\"\n   - Sources: McKinsey AI insights, Gartner, Forrester, Harvard Business Review\n\n5. **Breakthrough Innovations**\n   - Technical breakthroughs with clear commercial implications\n   - Search: \"AI breakthrough commercial application\", \"new AI capability business use\", \"AI research business impact\", \"AI innovation enterprise adoption\"\n   - Sources: Stanford HAI, MIT CSAIL, major lab announcements\n\n**Research Strategy:**\n- Use Web Search Tool for breaking news across all categories\n- Use Web Scrape Tool for detailed analysis from key URLs (especially priority URLs)\n- Use Web Crawl Tool for company blogs (Anthropic, OpenAI, Google DeepMind blogs)\n- Focus on last 24-48 hours only\n- Verify with authoritative sources\n- Consolidate duplicate stories - if multiple sources report same thing, combine into one concise summary\n\n**Key Sources to Check:**\n- Business News: Crunchbase News, TechCrunch, Bloomberg, VentureBeat\n- Model Updates: anthropic.com/news, openai.com/news, blog.google/technology/google-deepmind\n- Tools: Product Hunt (AI category), TechCrunch product launches\n- Trends: McKinsey AI insights, Gartner AI predictions, Forrester\n- Research: Stanford HAI news, MIT News AI section, Papers with Code trending\n- Social: Reddit (r/artificial, r/MachineLearning, r/automation), Twitter AI leaders\n\n**Output Requirements:**\nFor each development:\n- Clear headline (no jargon, business-focused)\n- What happened (2-3 sentences, business language)\n- Why it matters for business\n- Source URL\n- Competitive implications if significant\n\n**Communication Standards:**\n- Business language only - avoid technical jargon\n- Lead with impact: \"OpenAI's model enables new legal AI use cases\" NOT \"GPT-4 scored 89% on MMLU\"\n- Include metrics when available: funding amounts, user numbers, performance gains\n- Flag urgent items\n- Consolidate duplicates - if TechCrunch and VentureBeat both report same story, combine into one entry\n\n**Quality Standards:**\n- Only include strategically significant items\n- Distinguish hype from substance\n- Verify major claims with multiple sources\n- Focus on actionable intelligence\n\nReturn comprehensive findings organized by category. Be thorough - use all three tools multiple times to ensure complete coverage.`;\n\nreturn [{\n  json: {\n    date: today,\n    timestamp: new Date().toISOString(),\n    executivePrompt: executivePrompt,\n    emailSubject: `AI Executive Brief - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,\n    briefingType: \"C-Suite Daily Intelligence\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        340
+      ],
+      "id": "a561d34a-77cc-440e-9209-326dbc6574ce",
+      "name": "Code - Executive Config"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        656,
+        580
+      ],
+      "id": "e0c5d992-141c-4709-b82a-f2eac4ce0af0",
+      "name": "GPT 4o"
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "chatModel": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "prompt": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "=Transform the AI intelligence research into a polished executive briefing. Consolidate duplicate stories into single, comprehensive entries.\n\n**Raw Research:**\n{{ $('Response').item.json.response }}\n\n**Create Executive Brief JSON:**\n{\n  \"date\": \"{{ $('Code - Executive Config').item.json.date }}\",\n  \"executiveSummary\": \"2-3 sentence strategic overview of today's most critical developments\",\n  \"topPriority\": {\n    \"headline\": \"Most critical development of the day\",\n    \"summary\": \"What happened and why it's urgent (2-3 sentences)\",\n    \"action\": \"Recommended immediate action or strategic consideration\"\n  },\n  \"categories\": [\n    {\n      \"name\": \"Category Name\",\n      \"strategicContext\": \"Why this category matters for business strategy\",\n      \"developments\": [\n        {\n          \"headline\": \"Clear business-focused title (no jargon)\",\n          \"summary\": \"What happened (2-3 sentences, business language, consolidated from multiple sources if applicable)\",\n          \"whyItMatters\": \"Business impact and strategic implications\",\n          \"source\": \"Primary source name (or 'Multiple sources' if consolidated)\",\n          \"url\": \"https://primary-source-url\",\n          \"priority\": \"high|medium|low\",\n          \"competitiveImplications\": \"Market positioning impact if significant (optional)\"\n        }\n      ]\n    }\n  ],\n  \"modelWatch\": {\n    \"claude\": \"Latest Claude developments/pivots if any (focus on coding/developer positioning)\",\n    \"chatgpt\": \"Latest ChatGPT/GPT developments if any (focus on ease of use and adoption)\",\n    \"gemini\": \"Latest Gemini developments if any\"\n  },\n  \"marketIntelligence\": [\n    \"Key trend observation 1\",\n    \"Key trend observation 2\",\n    \"Key trend observation 3\"\n  ],\n  \"weekAhead\": \"Anticipated developments to watch based on today's signals\"\n}\n\n**Standards:**\n- Brevity: 2-3 sentences max per item\n- Clarity: Non-technical language, any CEO can understand\n- Relevance: Only strategically significant items\n- Consolidation: If multiple sources report same story, combine into one comprehensive entry with all sources noted\n- Priority: HIGH (major moves/announcements), MEDIUM (improvements/updates), LOW (minor updates)\n- Remove: Technical benchmarks without context, minor feature updates, speculation, duplicates\n\n**Model Updates Focus:**\n- Claude: Highlight coding/developer positioning\n- ChatGPT: Highlight ease of use and adoption focus\n- Gemini: Highlight Google's strategic positioning\n\nReturn ONLY valid JSON. No additional text or markdown."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.2,
+          "maxTokens": 4000
+        },
+        "simplifyOutput": true
+      },
+      "id": "openai-format",
+      "name": "OpenAI - Format Brief",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [
+        1240,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle OpenAI chat completion output (with simplifyOutput: true)\nlet jsonContent = '';\nif ($input.item.json.message?.content) {\n  jsonContent = $input.item.json.message.content;\n} else if ($input.item.json.message) {\n  jsonContent = typeof $input.item.json.message === 'string' ? $input.item.json.message : JSON.stringify($input.item.json.message);\n} else if ($input.item.json.content) {\n  jsonContent = $input.item.json.content;\n} else if ($input.item.json.text) {\n  jsonContent = $input.item.json.text;\n} else {\n  jsonContent = JSON.stringify($input.item.json);\n}\n\nconst data = JSON.parse(jsonContent);\nconst emailSubject = $('Code - Executive Config').item.json.emailSubject;\n\nfunction getPriorityBadge(priority) {\n  const badges = {\n    'high': '<span style=\"background:#dc2626;color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:0.5px\">HIGH PRIORITY</span>',\n    'medium': '<span style=\"background:#ea580c;color:#fff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600\">NOTABLE</span>',\n    'low': '<span style=\"background:#64748b;color:#fff;padding:3px 10px;border-radius:4px;font-size:11px\">FYI</span>'\n  };\n  return badges[priority] || '';\n}\n\nfunction getCategoryIcon(name) {\n  const icons = {\n    'Strategic Moves & Market Impact': '🎯',\n    'Foundation Model Updates': '🤖', \n    'Foundational Model Updates': '🤖',\n    'Enterprise Tools & Automation': '⚙️',\n    'Industry Trends & Analysis': '📊',\n    'Breakthrough Innovations': '🚀'\n  };\n  return icons[name] || '📌';\n}\n\nconst html = `<!DOCTYPE html>\n<html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${emailSubject}</title>\n<style>\nbody{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:0;line-height:1.6}\n.container{max-width:680px;margin:0 auto;background:#fff}\n.header{background:linear-gradient(135deg,#1e40af 0%,#3730a3 100%);padding:40px 30px;text-align:center;border-bottom:4px solid #1e3a8a}\n.header h1{margin:0;color:#fff;font-size:28px;font-weight:700;letter-spacing:-0.5px}\n.header .subtitle{margin:8px 0 0;color:#dbeafe;font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:500}\n.header .date{margin:12px 0 0;color:#bfdbfe;font-size:15px}\n.content{padding:35px 30px}\n.exec-summary{background:#f0f9ff;border-left:5px solid #0284c7;padding:24px;margin-bottom:30px;border-radius:6px}\n.exec-summary h2{margin:0 0 12px;color:#075985;font-size:18px;font-weight:700}\n.exec-summary p{color:#0c4a6e;font-size:15px;line-height:1.7;margin:0}\n.top-priority{background:#fef2f2;border-left:5px solid #dc2626;padding:24px;margin-bottom:30px;border-radius:6px}\n.top-priority h2{margin:0 0 12px;color:#991b1b;font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}\n.top-priority-headline{font-weight:600;color:#7f1d1d;font-size:16px;margin-bottom:10px}\n.top-priority-summary{color:#991b1b;font-size:15px;line-height:1.7;margin-bottom:12px}\n.top-priority-action{background:#fee2e2;padding:12px;border-radius:4px;color:#7f1d1d;font-size:14px;font-weight:600}\n.top-priority-action::before{content:\"→ ACTION: \";font-weight:700}\n.category{margin-bottom:40px}\n.category-header{border-bottom:3px solid #1e40af;padding-bottom:12px;margin-bottom:20px}\n.category-title{font-size:22px;font-weight:700;color:#1e293b;margin:0 0 8px;display:flex;align-items:center;gap:12px}\n.category-context{color:#64748b;font-size:14px;font-style:italic;margin:0}\n.development{margin-bottom:28px;padding-bottom:28px;border-bottom:1px solid #e2e8f0}\n.development:last-child{border:none;margin:0;padding-bottom:0}\n.development-headline{font-size:17px;font-weight:600;color:#0f172a;margin:0 0 12px}\n.development-headline a{color:#1e40af;text-decoration:none;transition:color 0.2s}\n.development-headline a:hover{color:#1e3a8a;text-decoration:underline}\n.development-summary{color:#475569;font-size:15px;line-height:1.7;margin:0 0 12px}\n.why-matters{background:#f1f5f9;padding:14px;border-radius:4px;margin-bottom:10px}\n.why-matters strong{color:#334155;font-size:13px;text-transform:uppercase;letter-spacing:0.5px}\n.why-matters p{color:#475569;font-size:14px;margin:6px 0 0;line-height:1.6}\n.competitive-implications{background:#fef3c7;border-left:3px solid #f59e0b;padding:12px;margin-top:12px;border-radius:4px}\n.competitive-implications strong{color:#92400e;font-size:13px;text-transform:uppercase}\n.competitive-implications p{color:#78350f;font-size:14px;margin:6px 0 0}\n.development-source{color:#94a3b8;font-size:13px;font-weight:500;margin-top:8px}\n.model-watch{background:#f0fdf4;border-left:4px solid #22c55e;padding:20px;margin-bottom:30px;border-radius:4px}\n.model-watch h2{margin:0 0 16px;color:#166534;font-size:18px}\n.model-update{margin-bottom:14px;padding:14px;background:white;border-radius:4px;border-left:3px solid #22c55e}\n.model-update:last-child{margin-bottom:0}\n.model-name{font-weight:700;color:#15803d;margin-bottom:6px;font-size:15px}\n.model-info{color:#166534;font-size:14px;line-height:1.6}\n.market-intelligence{background:#f5f3ff;border-left:4px solid #7c3aed;padding:20px;margin-bottom:30px;border-radius:4px}\n.market-intelligence h2{margin:0 0 16px;color:#5b21b6;font-size:18px}\n.market-intelligence ul{margin:0;padding-left:20px;color:#6b21a8}\n.market-intelligence li{margin-bottom:10px;line-height:1.6;font-size:14px}\n.market-intelligence li:last-child{margin-bottom:0}\n.week-ahead{background:#fef3c7;border-left:4px solid #f59e0b;padding:20px;margin-bottom:30px;border-radius:4px}\n.week-ahead h2{margin:0 0 12px;color:#92400e;font-size:18px}\n.week-ahead p{color:#78350f;font-size:14px;line-height:1.7;margin:0}\n.footer{background:#f8fafc;padding:30px;text-align:center;border-top:1px solid #e2e8f0}\n.footer p{margin:5px 0;color:#64748b;font-size:13px}\n.footer strong{color:#334155}\n@media(max-width:600px){.header h1{font-size:22px}.content{padding:25px 20px}.category-title{font-size:19px}.development-headline{font-size:16px}.development-header{flex-direction:column}}\n</style></head>\n<body><div class=\"container\">\n<div class=\"header\"><h1>⚡ AI Executive Brief</h1><div class=\"subtitle\">C-Suite Intelligence Digest</div><div class=\"date\">${data.date}</div></div>\n<div class=\"content\">\n${data.executiveSummary ? `<div class=\"exec-summary\"><h2>📋 Executive Summary</h2><p>${data.executiveSummary}</p></div>` : ''}\n${data.topPriority?.headline ? `<div class=\"top-priority\"><h2>🚨 Top Priority</h2><div class=\"top-priority-headline\">${data.topPriority.headline}</div><div class=\"top-priority-summary\">${data.topPriority.summary || ''}</div>${data.topPriority.action ? `<div class=\"top-priority-action\">${data.topPriority.action}</div>` : ''}</div>` : ''}\n${data.modelWatch && (data.modelWatch.claude || data.modelWatch.chatgpt || data.modelWatch.gemini) ? `<div class=\"model-watch\"><h2>🎯 Foundation Model Updates</h2>${data.modelWatch.claude ? `<div class=\"model-update\"><div class=\"model-name\">Claude (Anthropic)</div><div class=\"model-info\">${data.modelWatch.claude}</div></div>` : ''}${data.modelWatch.chatgpt ? `<div class=\"model-update\"><div class=\"model-name\">ChatGPT (OpenAI)</div><div class=\"model-info\">${data.modelWatch.chatgpt}</div></div>` : ''}${data.modelWatch.gemini ? `<div class=\"model-update\"><div class=\"model-name\">Gemini (Google)</div><div class=\"model-info\">${data.modelWatch.gemini}</div></div>` : ''}</div>` : ''}\n${data.categories?.map(cat => `<div class=\"category\"><div class=\"category-header\"><h2 class=\"category-title\"><span>${getCategoryIcon(cat.name)}</span><span>${cat.name}</span></h2>${cat.strategicContext ? `<p class=\"category-context\">${cat.strategicContext}</p>` : ''}</div>${cat.developments?.map(dev => `<div class=\"development\"><h3 class=\"development-headline\"><a href=\"${dev.url}\" target=\"_blank\">${dev.headline}</a> ${getPriorityBadge(dev.priority)}</h3><p class=\"development-summary\">${dev.summary}</p>${dev.whyItMatters ? `<div class=\"why-matters\"><strong>Why This Matters</strong><p>${dev.whyItMatters}</p></div>` : ''}${dev.competitiveImplications ? `<div class=\"competitive-implications\"><strong>⚠️ COMPETITIVE IMPLICATIONS:</strong><p>${dev.competitiveImplications}</p></div>` : ''}<div class=\"development-source\">Source: ${dev.source}</div></div>`).join('') || '<p style=\"color:#64748b;font-style:italic\">No significant developments today.</p>'}</div>`).join('') || ''}\n${data.marketIntelligence && data.marketIntelligence.length > 0 ? `<div class=\"market-intelligence\"><h2>💡 Market Intelligence</h2><ul>${data.marketIntelligence.map(insight => `<li>${insight}</li>`).join('')}</ul></div>` : ''}\n${data.weekAhead ? `<div class=\"week-ahead\"><h2>🔮 Week Ahead</h2><p>${data.weekAhead}</p></div>` : ''}\n</div>\n<div class=\"footer\"><p><strong>AI Executive Brief</strong></p><p>Strategic Intelligence for C-Suite Leaders</p><p>Automated by n8n • Powered by AI Research</p><p>Generated ${new Date().toLocaleString('en-US',{timeZone:'America/Chicago'})} CT</p></div>\n</div></body></html>`;\n\nreturn [{json:{subject:emailSubject,htmlBody:html,recipient:'parker@syntora.io',structuredData:data}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        340
+      ],
+      "id": "code-build-email",
+      "name": "Code - Build Email"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.recipient }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.htmlBody }}",
+        "options": {}
+      },
+      "id": "gmail-send",
+      "name": "Gmail - Send Brief",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1720,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ✅ Setup Complete!\n\n**Connected Tool Workflows:**\n✅ Web Search Tool: HQos9p9Z70mgDGSL\n✅ Web Scrape Tool: RWo2o7HlRWOlOzWa\n✅ Web Crawl Tool: G5f1ezKqJyumjX86\n\n**Required Credentials:**\n- OpenRouter API (GPT 4o - AI Agent)\n- OpenAI API (Format Brief node)\n- Gmail OAuth2 (Send email)\n- Firecrawl API (in tool workflows)\n\n**Before Running:**\n1. Activate all 3 tool workflows\n2. Update email recipient if needed\n3. Test with Schedule Trigger\n\n**Tools are optimized for:**\n- AI news discovery\n- Article extraction\n- Company blog crawling",
+        "height": 420,
+        "width": 420,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        580
+      ],
+      "id": "sticky-setup",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - Executive Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Executive Config": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Executive Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Executive Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Try Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Format Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent - Executive Intelligence",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Scrape Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent - Executive Intelligence",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Crawl Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent - Executive Intelligence",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT 4o": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Executive Intelligence",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Format Brief": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Email": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f00138b8-e70b-4dfe-9a1f-2c4bfd9cd199",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "f0fc7dab00cade0db864c7b325e12f7997287a868429bd9e02881780c4c35ff8"
+  },
+  "id": "6K5Nm5WpO5kmiiZ1",
+  "tags": []
+}

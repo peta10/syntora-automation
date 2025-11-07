@@ -1,0 +1,180 @@
+{
+  "name": "Web Search (Incubator)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Web Search Tool \nThis tool performs real-time web searches using the FireCrawl Search API based on a provided search phrase. It returns a structured list of top search results, including titles, URLs, and brief descriptions.",
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -96,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "5c34aa66-574d-4366-ad90-da6ac7e68ef3",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n    \"searchPhrase\": \"Cosmology\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -16,
+        224
+      ],
+      "id": "ec03c95b-858c-41bf-b87b-24c9a197e765",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0dd11e4e-893d-4145-b40b-56d93efe18f9",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a0125837-ddcf-4e12-b3ca-fa0ad084b8c3",
+              "name": "payload",
+              "value": "={{ $json.data }}",
+              "type": "object"
+            },
+            {
+              "id": "29f7e84f-38c5-4e2d-b7d3-d304e4cbd294",
+              "name": "text",
+              "value": "Success! We've got the results",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        112
+      ],
+      "id": "f42674a2-18e3-464b-8b25-7591fb755dba",
+      "name": "Success"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0e58673-1018-4fab-9458-5598548e5873",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "5feeb0c6-96ef-4e80-b32e-0acecf39930a",
+              "name": "payload ",
+              "value": "={{ $json.error }}",
+              "type": "object"
+            },
+            {
+              "id": "5c4b9640-44ed-4a6e-a930-b933056ca26c",
+              "name": "text",
+              "value": "No results found",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        320
+      ],
+      "id": "7b2d16fe-0b7c-4c7e-af3f-023fc770b7d6",
+      "name": "Fail"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v2/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": \"{{ $json.searchPhrase }}\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        224
+      ],
+      "id": "fb486de0-a7d8-4ce3-b4ee-633ce02cbbe1",
+      "name": "FireCrawl Search",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kJeE16TAhpenaTQ5",
+          "name": "FireCrawl Deepankar"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "searchPhrase": "Jason Godwin LinkedIn"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "FireCrawl Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FireCrawl Search": {
+      "main": [
+        [
+          {
+            "node": "Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "43a8e04a-baee-4871-98f3-872928eb2f72",
+  "meta": {
+    "instanceId": "f0fc7dab00cade0db864c7b325e12f7997287a868429bd9e02881780c4c35ff8"
+  },
+  "id": "lOGcfzGh9g1Fquc6",
+  "tags": []
+}

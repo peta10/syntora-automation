@@ -21,29 +21,36 @@
     },
     {
       "parameters": {
-        "url": "https://www.google.com/search",
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "qs": {
           "q": "={{ $json.query }}",
-          "num": "20"
+          "count": "20",
+          "country": "US"
         },
         "options": {
-          "headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-          }
+          "timeout": 30000
         }
       },
-      "id": "google-search",
-      "name": "Execute Google Search",
+      "id": "brave-search",
+      "name": "Execute Brave Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [650, 300]
+      "position": [650, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "your-brave-api-credential-id",
+          "name": "Brave Search API"
+        }
+      }
     },
     {
       "parameters": {
-        "functionCode": "// Parse Google search results and extract URLs\nconst html = $json.body || '';\n\n// Extract URLs from search results\nconst urlRegex = /https?:\\/\\/([\\w\\-]+\\.)+[\\w\\-]+(\\/[\\w\\-._~:/?#[\\]@!$&'()*+,;=]*)?/g;\nconst urls = html.match(urlRegex) || [];\n\n// Filter for company websites (exclude Google, social media, directories)\nconst companyUrls = urls.filter(url => \n  !url.includes('google.com') &&\n  !url.includes('facebook.com') &&\n  !url.includes('twitter.com') &&\n  !url.includes('linkedin.com/company') &&\n  url.includes('.com') || url.includes('.net') || url.includes('.co')\n);\n\n// Deduplicate by domain\nconst uniqueDomains = [...new Set(companyUrls.map(url => {\n  try {\n    const domain = new URL(url).hostname;\n    return domain;\n  } catch {\n    return null;\n  }\n}).filter(Boolean))];\n\n// Return array of unique URLs to scrape\nreturn uniqueDomains.slice(0, 10).map(domain => ({\n  json: {\n    url: `https://${domain}`,\n    domain: domain,\n    search_query: $json.query,\n    discovered_at: new Date().toISOString()\n  }\n}));"
+        "functionCode": "// Parse Brave Search API results (clean JSON)\nconst results = $json.web?.results || [];\n\nif (results.length === 0) {\n  console.log('No results from Brave Search');\n  return [];\n}\n\n// Extract URLs from Brave results\nconst companyUrls = results\n  .map(result => result.url)\n  .filter(url => \n    url &&\n    !url.includes('google.com') &&\n    !url.includes('facebook.com') &&\n    !url.includes('twitter.com') &&\n    !url.includes('linkedin.com/company') &&\n    !url.includes('wikipedia.org') &&\n    (url.includes('.com') || url.includes('.net') || url.includes('.co') || url.includes('.org'))\n  );\n\n// Deduplicate by domain\nconst uniqueDomains = [...new Set(companyUrls.map(url => {\n  try {\n    const domain = new URL(url).hostname.replace('www.', '');\n    return domain;\n  } catch {\n    return null;\n  }\n}).filter(Boolean))];\n\nconsole.log(`Found ${uniqueDomains.length} unique domains from Brave Search`);\n\n// Return array of unique URLs to scrape\nreturn uniqueDomains.slice(0, 10).map(domain => ({\n  json: {\n    url: `https://${domain}`,\n    domain: domain,\n    search_query: $json.query,\n    discovery_source: 'brave_search_api',\n    discovered_at: new Date().toISOString()\n  }\n}));"
       },
       "id": "parse-search-results",
-      "name": "Parse Search Results",
+      "name": "Parse Brave Results",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
       "position": [850, 300]
@@ -92,7 +99,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Extract emails, names, and titles from scraped pages\nconst teamPageHtml = $('Scrape Team Page').first().json.body || '';\nconst contactPageHtml = $('Scrape Contact Page').first().json.body || '';\nconst combinedHtml = teamPageHtml + ' ' + contactPageHtml;\n\n// Email extraction\nconst emailRegex = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g;\nconst emails = combinedHtml.match(emailRegex) || [];\n\n// Remove generic emails\nconst validEmails = emails.filter(email => \n  !email.includes('example.com') &&\n  !email.includes('info@') &&\n  !email.includes('support@') &&\n  !email.includes('admin@')\n);\n\n// Extract names (basic pattern matching)\nconst namePatterns = [\n  /([A-Z][a-z]+\\s[A-Z][a-z]+)\\s*[-–—,]\\s*([A-Za-z\\s]+)/g,\n  /([A-Z][a-z]+\\s[A-Z][a-z]+)\\s*[•|]\\s*([A-Za-z\\s]+)/g\n];\n\nconst prospects = [];\n\n// Create prospect records for each unique email\nconst uniqueEmails = [...new Set(validEmails)];\n\nuniqueEmails.forEach((email, index) => {\n  prospects.push({\n    prospect_id: `${$json.domain}_${index + 1}`,\n    email: email,\n    company_domain: $json.domain,\n    company_website: $json.url,\n    industry: 'wealth_management',\n    discovery_source: 'google_search_scraping',\n    discovery_method: $json.search_query,\n    discovered_at: new Date().toISOString(),\n    enrichment_status: 'pending',\n    data_quality_score: 30 // Base score for email discovery\n  });\n});\n\nreturn prospects.map(prospect => ({ json: prospect }));"
+        "functionCode": "// Extract emails, names, and titles from scraped pages\nconst items = $input.all();\n\n// Get HTML from both scrape nodes\nlet teamPageHtml = '';\nlet contactPageHtml = '';\n\nfor (const item of items) {\n  if (item.json.body) {\n    // Determine if this is team or contact page by URL\n    if (item.json.url && item.json.url.includes('/team')) {\n      teamPageHtml = item.json.body;\n    } else if (item.json.url && item.json.url.includes('/contact')) {\n      contactPageHtml = item.json.body;\n    } else {\n      // Fallback: combine all HTML\n      teamPageHtml += item.json.body || '';\n    }\n  }\n}\n\nconst combinedHtml = teamPageHtml + ' ' + contactPageHtml;\n\nif (!combinedHtml || combinedHtml.length < 100) {\n  console.log('No valid HTML content found');\n  return [];\n}\n\n// Email extraction\nconst emailRegex = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g;\nconst emails = combinedHtml.match(emailRegex) || [];\n\n// Remove generic emails\nconst validEmails = emails.filter(email => \n  !email.includes('example.com') &&\n  !email.includes('info@') &&\n  !email.includes('support@') &&\n  !email.includes('admin@') &&\n  !email.includes('hello@') &&\n  !email.includes('contact@')\n);\n\nif (validEmails.length === 0) {\n  console.log('No valid emails found');\n  return [];\n}\n\n// Get domain from first item\nconst firstItem = items[0].json;\nconst domain = firstItem.domain || 'unknown';\nconst url = firstItem.url || '';\nconst discoverySource = firstItem.discovery_source || 'brave_search_api';\n\nconst prospects = [];\n\n// Create prospect records for each unique email\nconst uniqueEmails = [...new Set(validEmails)];\n\nconsole.log(`Found ${uniqueEmails.length} unique emails from ${domain}`);\n\nuniqueEmails.forEach((email, index) => {\n  // Generate email hash for deduplication\n  const crypto = require('crypto');\n  const emailHash = crypto.createHash('md5').update(email.toLowerCase().trim()).digest('hex');\n  \n  prospects.push({\n    email: email,\n    email_hash: emailHash,\n    company_domain: domain,\n    company_website: url,\n    industry: 'wealth_management',\n    discovery_source: discoverySource,\n    status: 'discovered',\n    discovered_at: new Date().toISOString()\n  });\n});\n\nreturn prospects.map(prospect => ({ json: prospect }));"
       },
       "id": "extract-prospect-data",
       "name": "Extract Prospect Data",
@@ -169,25 +176,25 @@
       "main": [
         [
           {
-            "node": "Execute Google Search",
+            "node": "Execute Brave Search",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Execute Google Search": {
+    "Execute Brave Search": {
       "main": [
         [
           {
-            "node": "Parse Search Results",
+            "node": "Parse Brave Results",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse Search Results": {
+    "Parse Brave Results": {
       "main": [
         [
           {

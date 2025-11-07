@@ -1,0 +1,161 @@
+{
+  "name": "12 - Real Estate Discovery (Firecrawl)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate search queries for real estate professionals\nconst searchQueries = [\n  'site:*.com \"commercial real estate\" \"broker\" email',\n  'site:*.com \"real estate investment\" \"team\" email contact',\n  'site:*.com \"commercial property\" \"broker\" email',\n  'site:*.com \"real estate syndication\" email contact'\n];\n\nreturn searchQueries.map((query, index) => ({\n  json: {\n    query: query,\n    industry: 'real_estate',\n    query_id: `re_${index + 1}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "generate-queries",
+      "name": "Generate Search Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "count",
+              "value": "20"
+            },
+            {
+              "name": "country",
+              "value": "US"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "brave-search",
+      "name": "Brave Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "{{ $credentials.braveSearchApi }}",
+          "name": "Brave Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $input.item.json.web?.results || [];\nif (results.length === 0) return [];\n\nconst companyUrls = results\n  .map(result => result.url)\n  .filter(url => url && !url.includes('google.com') && !url.includes('zillow.com') && !url.includes('realtor.com'));\n\nconst uniqueDomains = [...new Set(companyUrls.map(url => {\n  try { return new URL(url).hostname.replace('www.', ''); } catch { return null; }\n}).filter(Boolean))];\n\nreturn uniqueDomains.slice(0, 12).map(domain => ({\n  json: {\n    company_domain: domain,\n    company_website: `https://${domain}`,\n    industry: $input.item.json.industry,\n    discovery_source: 'brave_search_api',\n    discovered_at: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "parse-search-results",
+      "name": "Parse Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.company_website }}\",\n  \"formats\": [\"markdown\"],\n  \"onlyMainContent\": true,\n  \"waitFor\": 1000\n}",
+        "options": {
+          "timeout": 45000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "firecrawl-scrape",
+      "name": "Firecrawl: Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "{{ $credentials.firecrawlApi }}",
+          "name": "Firecrawl API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const scraped = $input.item.json;\nconst markdown = scraped.data?.markdown || '';\nconst metadata = scraped.data?.metadata || {};\nif (!markdown || markdown.length < 100) return [];\n\nconst emailRegex = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g;\nconst allEmails = markdown.match(emailRegex) || [];\nconst validEmails = allEmails.filter(e => !e.toLowerCase().includes('info@') && !e.toLowerCase().includes('support@'));\nconst uniqueEmails = [...new Set(validEmails)];\nif (uniqueEmails.length === 0) return [];\n\nconst companyData = $node[\"Parse Search Results\"].json;\nconst crypto = require('crypto');\nconst prospects = [];\n\nfor (const email of uniqueEmails) {\n  prospects.push({\n    email,\n    email_hash: crypto.createHash('md5').update(email.toLowerCase().trim()).digest('hex'),\n    company_domain: companyData.company_domain,\n    company_website: companyData.company_website,\n    company_name: metadata.title || companyData.company_domain,\n    industry: 'real_estate',\n    discovery_source: 'brave_firecrawl',\n    status: 'discovered',\n    discovered_at: new Date().toISOString()\n  });\n}\n\nreturn prospects.map(p => ({ json: p }));"
+      },
+      "id": "extract-prospects",
+      "name": "Extract Prospect Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{"leftValue": "={{ $json.email }}", "rightValue": "", "operator": {"type": "string", "operation": "notEmpty"}}]
+        }
+      },
+      "id": "filter-valid",
+      "name": "Filter Valid Prospects",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO fs_prospects (email, email_hash, company_domain, company_website, company_name, industry, discovery_source, status, discovered_at) VALUES ('{{ $json.email }}', '{{ $json.email_hash }}', '{{ $json.company_domain }}', '{{ $json.company_website }}', '{{ $json.company_name }}', '{{ $json.industry }}', '{{ $json.discovery_source }}', '{{ $json.status }}', '{{ $json.discovered_at }}') ON CONFLICT (email_hash) DO UPDATE SET discovery_source = CASE WHEN fs_prospects.discovery_source NOT LIKE '%' || EXCLUDED.discovery_source || '%' THEN fs_prospects.discovery_source || ',' || EXCLUDED.discovery_source ELSE fs_prospects.discovery_source END;"
+      },
+      "id": "save-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1640, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{ $credentials.supabase }}",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn [{ json: { workflow: 'real_estate_firecrawl', prospects_found: items.length, timestamp: new Date().toISOString() }}];"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {"main": [[{"node": "Generate Search Queries", "type": "main", "index": 0}]]},
+    "Generate Search Queries": {"main": [[{"node": "Brave Search API", "type": "main", "index": 0}]]},
+    "Brave Search API": {"main": [[{"node": "Parse Search Results", "type": "main", "index": 0}]]},
+    "Parse Search Results": {"main": [[{"node": "Firecrawl: Scrape Website", "type": "main", "index": 0}]]},
+    "Firecrawl: Scrape Website": {"main": [[{"node": "Extract Prospect Data", "type": "main", "index": 0}]]},
+    "Extract Prospect Data": {"main": [[{"node": "Filter Valid Prospects", "type": "main", "index": 0}]]},
+    "Filter Valid Prospects": {"main": [[{"node": "Save to Supabase", "type": "main", "index": 0}]]},
+    "Save to Supabase": {"main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "tags": [{"id": "syntora", "name": "syntora-financial-services"}]
+}

@@ -1,0 +1,251 @@
+{
+  "name": "Web Crawl (incubator)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2,\n    \"max_pages\": 25\n  }\n}\n"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -256,
+        96
+      ],
+      "id": "f58bfa4b-822a-49fa-b2ca-55527d65f1fc",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "content": "## Web Crawl Tool\n** The Web Crawl Tool takes a URL, crawls it (n levels deep) and returns the content.",
+        "height": 120,
+        "width": 420
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -272,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "6a0edbc2-5f39-4448-8534-593e66afe436",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d2d6d0ce-7b43-47af-84dc-991aff5af4e8",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "bf0c40d6-c48b-47be-b18f-0f8668bee668",
+              "name": "payload",
+              "value": "={{ $json.data }}",
+              "type": "array"
+            },
+            {
+              "id": "551b2943-ed7e-43a9-bd5a-ae2e933a798f",
+              "name": "text",
+              "value": "Website successfully crawled!",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        864,
+        0
+      ],
+      "id": "d05b2fcf-a050-4d82-9786-fdb32c5b0b40",
+      "name": "Success"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b0f55ed8-584d-41fe-9896-696e8a3e5a64",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "c9f11042-f3eb-49ca-92fd-2caec41a3d42",
+              "name": "payload",
+              "value": "={{ $json.error }}",
+              "type": "string"
+            },
+            {
+              "id": "82379c03-2760-4cc5-ad90-722dbc7c1e4c",
+              "name": "text",
+              "value": "An error occurred",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        864,
+        224
+      ],
+      "id": "0b56196a-1c7d-4944-b3d4-a1ae622377c8",
+      "name": "Fail"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v2/crawl",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.payload.url }}\",\n  \"sitemap\": \"include\",\n  \"crawlEntireDomain\": false,\n  \"limit\": 10,\n  \"scrapeOptions\": {\n    \"onlyMainContent\": false,\n    \"maxAge\": 172800000,\n    \"parsers\": [\n      \"pdf\"\n    ],\n    \"formats\": [\n      \"markdown\"\n    ]\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        96
+      ],
+      "id": "eb902f4f-1acb-4120-b45e-f6a86e61d7cf",
+      "name": "FireCRAWL",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kJeE16TAhpenaTQ5",
+          "name": "FireCrawl Deepankar"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        608,
+        16
+      ],
+      "id": "fc4ed4ce-deb9-435f-b675-27b6c283556e",
+      "name": "GET Results",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kJeE16TAhpenaTQ5",
+          "name": "FireCrawl Deepankar"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "amount": 7
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        16
+      ],
+      "id": "e8427874-5551-4bd7-abd0-26d8b8e830cb",
+      "name": "Wait",
+      "webhookId": "ca888c2b-503e-4b5f-a3ba-899c18a6bc3a"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "payload": {
+            "url": "https://showheroes-group.com",
+            "max_pages": 3,
+            "depth": 1
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "FireCRAWL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FireCRAWL": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Results": {
+      "main": [
+        [
+          {
+            "node": "Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "GET Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e04c7842-28c4-463e-b7b6-4fba8738221c",
+  "meta": {
+    "instanceId": "f0fc7dab00cade0db864c7b325e12f7997287a868429bd9e02881780c4c35ff8"
+  },
+  "id": "bmu6QX56Zx2JrZXI",
+  "tags": []
+}

@@ -1,0 +1,277 @@
+{
+  "name": "02 - Wealth Management Discovery (Firecrawl)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate search queries for wealth management firms\nconst searchQueries = [\n  'site:*.com \"wealth management\" \"team\" email',\n  'site:*.com \"financial advisor\" \"RIA\" email',\n  'site:*.com \"investment management\" \"advisors\" email',\n  'site:*.com \"private wealth\" \"team\" email contact',\n  'site:*.com \"fee-only\" \"financial planner\" email',\n  'site:*.com \"CFP\" \"wealth manager\" email contact'\n];\n\nreturn searchQueries.map((query, index) => ({\n  json: {\n    query: query,\n    industry: 'wealth_management',\n    query_id: `wm_${index + 1}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "generate-queries",
+      "name": "Generate Search Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.query }}"
+            },
+            {
+              "name": "count",
+              "value": "20"
+            },
+            {
+              "name": "country",
+              "value": "US"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "brave-search",
+      "name": "Brave Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "{{ $credentials.braveSearchApi }}",
+          "name": "Brave Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Brave Search results and extract company URLs\nconst results = $input.item.json.web?.results || [];\n\nif (results.length === 0) {\n  console.log('No results from Brave Search');\n  return [];\n}\n\n// Extract URLs and filter for company websites\nconst companyUrls = results\n  .map(result => result.url)\n  .filter(url => \n    url &&\n    !url.includes('google.com') &&\n    !url.includes('facebook.com') &&\n    !url.includes('twitter.com') &&\n    !url.includes('linkedin.com/company') &&\n    !url.includes('wikipedia.org') &&\n    !url.includes('indeed.com') &&\n    !url.includes('glassdoor.com') &&\n    (url.includes('.com') || url.includes('.net') || url.includes('.co'))\n  );\n\n// Deduplicate by domain\nconst uniqueDomains = [...new Set(companyUrls.map(url => {\n  try {\n    const domain = new URL(url).hostname.replace('www.', '');\n    return domain;\n  } catch {\n    return null;\n  }\n}).filter(Boolean))];\n\nconsole.log(`Found ${uniqueDomains.length} unique company domains`);\n\n// Return URLs to scrape with Firecrawl\nreturn uniqueDomains.slice(0, 12).map(domain => ({\n  json: {\n    company_domain: domain,\n    company_website: `https://${domain}`,\n    industry: $input.item.json.industry,\n    discovery_source: 'brave_search_api',\n    discovered_at: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "parse-search-results",
+      "name": "Parse Search Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.company_website }}\",\n  \"formats\": [\"markdown\", \"html\"],\n  \"onlyMainContent\": true,\n  \"includeTags\": [\"a\", \"p\", \"div\", \"span\", \"h1\", \"h2\", \"h3\"],\n  \"waitFor\": 1000\n}",
+        "options": {
+          "timeout": 45000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2,
+            "waitBetweenTries": 3000
+          }
+        }
+      },
+      "id": "firecrawl-scrape",
+      "name": "Firecrawl: Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "{{ $credentials.firecrawlApi }}",
+          "name": "Firecrawl API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract emails, names, and contact info from Firecrawl markdown\nconst scraped = $input.item.json;\nconst markdown = scraped.data?.markdown || '';\nconst metadata = scraped.data?.metadata || {};\n\nif (!markdown || markdown.length < 100) {\n  console.log('No useful content scraped');\n  return [];\n}\n\n// Extract emails using regex\nconst emailRegex = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/g;\nconst allEmails = markdown.match(emailRegex) || [];\n\n// Filter out generic/support emails\nconst validEmails = allEmails.filter(email => {\n  const lower = email.toLowerCase();\n  return !\n    lower.includes('info@') &&\n    !lower.includes('support@') &&\n    !lower.includes('admin@') &&\n    !lower.includes('hello@') &&\n    !lower.includes('contact@') &&\n    !lower.includes('noreply@') &&\n    !lower.includes('example.com') &&\n    !lower.includes('test@');\n});\n\n// Deduplicate emails\nconst uniqueEmails = [...new Set(validEmails)];\n\nif (uniqueEmails.length === 0) {\n  console.log('No valid emails found');\n  return [];\n}\n\n// Get company info from earlier nodes\nconst companyData = $node[\"Parse Search Results\"].json;\nconst domain = companyData.company_domain;\nconst website = companyData.company_website;\n\nconsole.log(`Found ${uniqueEmails.length} valid emails from ${domain}`);\n\n// Create prospect records\nconst crypto = require('crypto');\nconst prospects = [];\n\nfor (const email of uniqueEmails) {\n  const emailHash = crypto.createHash('md5')\n    .update(email.toLowerCase().trim())\n    .digest('hex');\n  \n  prospects.push({\n    email: email,\n    email_hash: emailHash,\n    company_domain: domain,\n    company_website: website,\n    company_name: metadata.title || domain,\n    industry: 'wealth_management',\n    discovery_source: 'brave_firecrawl',\n    firecrawl_metadata: {\n      title: metadata.title,\n      description: metadata.description,\n      language: metadata.language,\n      sourceURL: metadata.sourceURL\n    },\n    status: 'discovered',\n    discovered_at: new Date().toISOString()\n  });\n}\n\nreturn prospects.map(p => ({ json: p }));"
+      },
+      "id": "extract-prospects",
+      "name": "Extract Prospect Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.company_domain }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        }
+      },
+      "id": "filter-valid",
+      "name": "Filter Valid Prospects",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO fs_prospects (\n  email,\n  email_hash,\n  company_domain,\n  company_website,\n  company_name,\n  industry,\n  discovery_source,\n  status,\n  discovered_at\n)\nVALUES (\n  '{{ $json.email }}',\n  '{{ $json.email_hash }}',\n  '{{ $json.company_domain }}',\n  '{{ $json.company_website }}',\n  '{{ $json.company_name }}',\n  '{{ $json.industry }}',\n  '{{ $json.discovery_source }}',\n  '{{ $json.status }}',\n  '{{ $json.discovered_at }}'\n)\nON CONFLICT (email_hash) DO UPDATE SET\n  discovery_source = CASE \n    WHEN fs_prospects.discovery_source NOT LIKE '%' || EXCLUDED.discovery_source || '%' \n    THEN fs_prospects.discovery_source || ',' || EXCLUDED.discovery_source\n    ELSE fs_prospects.discovery_source\n  END,\n  discovered_at = GREATEST(fs_prospects.discovered_at, EXCLUDED.discovered_at);"
+      },
+      "id": "save-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1640, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "{{ $credentials.supabase }}",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate execution summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'wealth_management_discovery_firecrawl',\n  prospects_found: items.length,\n  discovery_method: 'brave_search_api + firecrawl',\n  industry: 'wealth_management',\n  timestamp: new Date().toISOString(),\n  message: `✅ Discovered ${items.length} wealth management prospects using Brave + Firecrawl`\n};\n\nconsole.log(summary.message);\n\nreturn [{ json: summary }];"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Search Queries": {
+      "main": [
+        [
+          {
+            "node": "Brave Search API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Brave Search API": {
+      "main": [
+        [
+          {
+            "node": "Parse Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Search Results": {
+      "main": [
+        [
+          {
+            "node": "Firecrawl: Scrape Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Firecrawl: Scrape Website": {
+      "main": [
+        [
+          {
+            "node": "Extract Prospect Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Prospect Data": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Prospects": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-10-08T00:00:00.000Z",
+      "updatedAt": "2025-10-08T00:00:00.000Z",
+      "id": "syntora",
+      "name": "syntora-financial-services"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-08T04:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,329 @@
+{
+  "name": "SEC IAPD Regulatory Discovery",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "workflow-trigger",
+      "name": "When Called by Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate search parameters for SEC Investment Adviser Public Disclosure\n// Focus on states with high concentration of RIAs\n\nconst targetStates = [\n  { state: 'IL', city: 'Chicago', priority: 1 },\n  { state: 'NY', city: 'New York', priority: 1 },\n  { state: 'CA', city: 'Los Angeles', priority: 2 },\n  { state: 'CA', city: 'San Francisco', priority: 2 },\n  { state: 'TX', city: 'Dallas', priority: 2 },\n  { state: 'FL', city: 'Miami', priority: 3 },\n  { state: 'MA', city: 'Boston', priority: 2 }\n];\n\n// Return search parameters for each location\nreturn targetStates.map((location, index) => ({\n  json: {\n    state: location.state,\n    city: location.city,\n    priority: location.priority,\n    search_id: `sec_iapd_${location.state}_${index}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "generate-search-params",
+      "name": "Generate Search Parameters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.adviserinfo.sec.gov/search",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"filters\": {\n    \"advisorType\": [\"SEC_REGISTERED_RIA\"],\n    \"city\": \"{{ $json.city }}\",\n    \"state\": \"{{ $json.state }}\"\n  },\n  \"sorting\": {\n    \"field\": \"firmName\",\n    \"order\": \"asc\"\n  },\n  \"from\": 0,\n  \"size\": 50\n}",
+        "options": {
+          "timeout": 30000
+        },
+        "ignoreHttpStatusErrors": true
+      },
+      "id": "search-sec-iapd",
+      "name": "Search SEC IAPD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse SEC IAPD search results\nconst response = $json;\n\n// Check if we have results\nif (!response.hits || !response.hits.hits || response.hits.hits.length === 0) {\n  console.log('No results from SEC IAPD');\n  return [];\n}\n\nconst firms = response.hits.hits;\n\nconsole.log(`Found ${firms.length} RIA firms from SEC IAPD`);\n\n// Extract firm data\nreturn firms.map((hit, index) => {\n  const firm = hit._source || {};\n  \n  return {\n    json: {\n      firm_name: firm.firmName || '',\n      crd_number: firm.orgPk || '',\n      sec_number: firm.secNumber || '',\n      street_address: firm.mailingAddress?.street1 || '',\n      city: firm.mailingAddress?.city || '',\n      state: firm.mailingAddress?.state || '',\n      zip: firm.mailingAddress?.zipCode || '',\n      phone: firm.phone || '',\n      website: firm.website || '',\n      total_aum: firm.totalAssetsManagedInMillions || 0,\n      registration_date: firm.registrationDate || '',\n      discovery_source: 'sec_iapd_regulatory',\n      is_regulatory_verified: true,\n      discovered_at: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "parse-sec-results",
+      "name": "Parse SEC Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.firm_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.crd_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        }
+      },
+      "id": "filter-valid-firms",
+      "name": "Filter Valid Firms",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Enrich firm data with website if missing\nconst firm = $json;\n\n// If no website, try to find it via Brave Search\nif (!firm.website || firm.website === '') {\n  return {\n    json: {\n      ...firm,\n      needs_website_lookup: true,\n      search_query: `${firm.firm_name} ${firm.city} ${firm.state} investment adviser`\n    }\n  };\n}\n\n// Parse and clean website URL\nlet website = firm.website;\nif (!website.startsWith('http')) {\n  website = `https://${website}`;\n}\n\ntry {\n  const url = new URL(website);\n  const domain = url.hostname.replace('www.', '');\n  \n  return {\n    json: {\n      ...firm,\n      company_website: website,\n      company_domain: domain,\n      needs_website_lookup: false\n    }\n  };\n} catch {\n  return {\n    json: {\n      ...firm,\n      needs_website_lookup: true,\n      search_query: `${firm.firm_name} ${firm.city} ${firm.state}`\n    }\n  };\n}"
+      },
+      "id": "enrich-website",
+      "name": "Enrich Website Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needs_website_lookup }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "check-needs-website",
+      "name": "Needs Website Lookup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "qs": {
+          "q": "={{ $json.search_query }}",
+          "count": "3"
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "lookup-website-brave",
+      "name": "Lookup Website (Brave)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "your-brave-api-credential-id",
+          "name": "Brave Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract website from Brave search results\nconst braveResults = $json.web?.results || [];\nconst firmData = $node[\"Enrich Website Data\"].json;\n\nif (braveResults.length === 0) {\n  console.log('No website found for:', firmData.firm_name);\n  return {\n    json: {\n      ...firmData,\n      company_website: '',\n      company_domain: '',\n      needs_website_lookup: false\n    }\n  };\n}\n\n// Get first result URL\nconst firstResult = braveResults[0];\nconst website = firstResult.url;\n\ntry {\n  const url = new URL(website);\n  const domain = url.hostname.replace('www.', '');\n  \n  console.log(`Found website for ${firmData.firm_name}: ${website}`);\n  \n  return {\n    json: {\n      ...firmData,\n      company_website: website,\n      company_domain: domain,\n      needs_website_lookup: false\n    }\n  };\n} catch {\n  return {\n    json: {\n      ...firmData,\n      company_website: website,\n      company_domain: '',\n      needs_website_lookup: false\n    }\n  };\n}"
+      },
+      "id": "extract-website",
+      "name": "Extract Website from Results",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare final prospect data for Supabase\nconst firm = $json;\n\nconst crypto = require('crypto');\n\n// Generate prospect_id from CRD number\nconst prospectId = `sec_iapd_${firm.crd_number}`;\n\n// Try to generate email hash if we have a domain\nlet emailHash = null;\nif (firm.company_domain) {\n  // Generate generic email for hashing (we'll find real ones later)\n  const genericEmail = `info@${firm.company_domain}`;\n  emailHash = crypto.createHash('md5').update(genericEmail.toLowerCase().trim()).digest('hex');\n}\n\nreturn {\n  json: {\n    prospect_id: prospectId,\n    company_name: firm.firm_name,\n    company_domain: firm.company_domain || '',\n    company_website: firm.company_website || '',\n    industry: 'wealth_management',\n    discovery_source: 'sec_iapd_regulatory',\n    is_regulatory_verified: true,\n    regulatory_data: {\n      crd_number: firm.crd_number,\n      sec_number: firm.sec_number,\n      total_aum_millions: firm.total_aum,\n      registration_date: firm.registration_date\n    },\n    company_intelligence: {\n      street_address: firm.street_address,\n      city: firm.city,\n      state: firm.state,\n      zip: firm.zip,\n      phone: firm.phone\n    },\n    status: 'discovered',\n    discovered_at: new Date().toISOString(),\n    email_hash: emailHash\n  }\n};"
+      },
+      "id": "prepare-supabase-data",
+      "name": "Prepare Supabase Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "fs_prospects",
+        "options": {}
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "your-supabase-credential-id",
+          "name": "Supabase - Syntora"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate summary\nconst items = $input.all();\n\nconst summary = {\n  workflow: 'sec_iapd_regulatory_discovery',\n  firms_discovered: items.length,\n  discovery_source: 'sec_iapd',\n  is_regulatory_data: true,\n  timestamp: new Date().toISOString()\n};\n\nconsole.log(`SEC IAPD Discovery Complete: ${items.length} firms saved`);\n\nreturn { json: summary };"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2450, 300]
+    }
+  ],
+  "connections": {
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Search Parameters": {
+      "main": [
+        [
+          {
+            "node": "Search SEC IAPD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search SEC IAPD": {
+      "main": [
+        [
+          {
+            "node": "Parse SEC Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse SEC Results": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Firms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Firms": {
+      "main": [
+        [
+          {
+            "node": "Enrich Website Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Website Data": {
+      "main": [
+        [
+          {
+            "node": "Needs Website Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Website Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Lookup Website (Brave)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Supabase Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Website (Brave)": {
+      "main": [
+        [
+          {
+            "node": "Extract Website from Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Website from Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Supabase Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Supabase Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["financial-services", "discovery", "regulatory", "sec-iapd", "wealth-management"],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-08T00:00:00.000Z",
+  "versionId": "1"
+}

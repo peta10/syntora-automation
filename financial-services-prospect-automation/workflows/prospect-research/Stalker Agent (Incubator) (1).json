@@ -1,0 +1,462 @@
+{
+  "name": "Stalker Agent (Incubator)",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "14d9076e-27ea-4846-8b44-f83cf4022b9e",
+              "name": "response",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        608,
+        144
+      ],
+      "id": "30dc56dc-73fa-45fb-a1ed-2dcf07d3c3ac",
+      "name": "Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f2a8ff2d-6b59-4ad6-a2e7-8705354f4105",
+              "name": "response",
+              "value": "Error occurred. Please try again.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        608,
+        336
+      ],
+      "id": "987d012b-3d82-4731-b4b3-d25d4baa17da",
+      "name": "Try Again"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "=# Overview\nYou are a skilled private investigator agent. Your responsibility is to conduct comprehensive investigations on individuals or companies and retrieve the most relevant, detailed, and up-to-date information available across the web.\n\n## Tools\nYou have access to three powerful tools to conduct your research. You must use all three tools in combination to gather layered and complete information.\n\n- Web Search Tool :\nUse this to perform general web searches using focused queries. It returns summaries or metadata from top-ranking web pages.\n\nHere's an example:\n{\n    \"searchPhrase\": \"Cosmology\"\n}\n\n- Web Scrape Tool : (This tool expects a payload 'object')\nUse this when you find a specific link or URL (e.g., a LinkedIn profile, company homepage, blog post) and need to extract data directly from that single page.\n\n- Web Crawl Tool : (This tool expects a payload 'object')\nUse this when a deeper scan across multiple linked pages is needed (e.g., blog archives, entire company domains, team pages, or news sections). This tool lets you explore an entire website beyond a single page.\n\n## Guidelines\nFor any research request, whether on a person or a company, follow this structured process and call all three tools accordingly:\n\n1. Start with the Web Search Tool:\nRun multiple targeted searches such as:\n\n\"<Person Name> LinkedIn\"\n\n\"<Person Name> Twitter\"\n\n\"<Company Name> Blog\"\n\n\"<Company Name> Funding News\"\n\nCollect all relevant URLs.\n\n2. For each relevant URL from search results, call the Web Scrape Tool:\nExtract in-depth details from pages like personal profiles, press releases, blog articles, company pages, etc.\n\n3. When the target site contains multiple useful subpages, such as blog sections or press/news pages, use the Web Crawl Tool:\nProvide the root URL (e.g., company blog or newsroom)\n\nSet appropriate depth (e.g., depth = 2) to gather posts, news, or updates linked within.\n\n## Data to Prioritize\n\nIf investigating a person:\n- LinkedIn profile link\n- Work history and companies\n- Social profiles (Twitter, Instagram, GitHub, etc.)\n- Geography, education, and field of study\n- Featured posts or press mentions\n- Volunteer or social initiatives\n\nIf investigating a company:\n\n- Company LinkedIn URL\n- Website and blog\n- Recent posts or news articles\n- Industry trends or challenges\n- Recent growth initiatives (new partnerships, product launches, market entries)\n- Company news, funding rounds, acquisitions, or expansion plans\n- Industry trends, market challenges, and competitive news\n- Products/services overview and business model insights of the subject.\n- Any pre-call intake, briefing notes, or internal context (if available)\n- Initial automation / AI Implementation opportunities\n\n## Output Guidelines\nAlways include relevant links as part of your answer.\n\nMaintain a natural, human-like tone with varied sentence structures.\n\nBreak long text into logical sections with clear flow and organization.\n\nOnly provide factual and verifiable information.\n\nDo not fabricate information. If a fact cannot be retrieved or verified from the tools, say so clearly.\n\nNever assume or guess personal or company details, affiliations, or actions.\n\nAvoid summarizing from memory then you should always cite or base your responses on the actual data retrieved.\n\nDO NOT rely on search results alone — always extract additional details by scraping and crawling where needed.",
+          "maxIterations": 25
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        160,
+        240
+      ],
+      "id": "e8d1344d-eaac-43e2-9a86-2a2856bb8f68",
+      "name": "Stalker Agent",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Stalker Agent\n** This Agent uses web search, scraping and crawling to find detailed information about a specific individual or organization.",
+        "height": 140,
+        "width": 420
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -16,
+        -32
+      ],
+      "id": "da34fbba-38d6-4919-96c6-0c7cef65559e",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "description": "Call this to do research on the web",
+        "workflowId": {
+          "__rl": true,
+          "value": "lOGcfzGh9g1Fquc6",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/lOGcfzGh9g1Fquc6",
+          "cachedResultName": "Incubator — Web Search (Incubator)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "searchPhrase": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('searchPhrase', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "searchPhrase",
+              "displayName": "searchPhrase",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        560
+      ],
+      "id": "b8ea6fa8-eb65-44bd-8fd5-598cdcb70a83",
+      "name": "Web Search Tool"
+    },
+    {
+      "parameters": {
+        "description": "Call this to do scrape websites on the web",
+        "workflowId": {
+          "__rl": true,
+          "value": "onpLuRCWO3ENfIN9",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/onpLuRCWO3ENfIN9",
+          "cachedResultName": "Incubator — Web Scrape (Incubator)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payload": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('payload', `This tool expects a payload 'object'. Here's an example :\n\n{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2\n  }\n}`, 'string') }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "payload",
+              "displayName": "payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        384,
+        560
+      ],
+      "id": "c8a9d4aa-7213-4905-b497-f1affef161f2",
+      "name": "Web Scrape Tool"
+    },
+    {
+      "parameters": {
+        "description": "Call this to do Crawl websites on the web",
+        "workflowId": {
+          "__rl": true,
+          "value": "bmu6QX56Zx2JrZXI",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/bmu6QX56Zx2JrZXI",
+          "cachedResultName": "Incubator — Web Crawl (incubator)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payload": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('payload', `This tool expects a payload 'object'. Here's an example:\n\n{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2,\n    \"max_pages\": 25\n  }\n}`, 'string') }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "payload",
+              "displayName": "payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        560
+      ],
+      "id": "1b898148-4b67-4647-861a-8d5dd68a0aff",
+      "name": "Web Crawl Tool"
+    },
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Hi there! 👋\nMy name is Stalker Agent. How can I assist you today?",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -656,
+        240
+      ],
+      "id": "054b24b2-6890-4fdb-97cc-05359310b138",
+      "name": "When chat message received",
+      "webhookId": "57d22c1f-7c06-4504-92b0-37d887f4cbef"
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        80,
+        560
+      ],
+      "id": "b8b3bd25-1f0c-43d4-b240-c385706a2af3",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "chatInput"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        0
+      ],
+      "id": "f63bf9f3-6a3b-4b71-b16a-890ff546000d",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "action": "generate",
+        "dataPropertyName": "sessionId"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ],
+      "id": "52385f3f-e2fd-4ab1-94f4-0505c76731a1",
+      "name": "Crypto"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1fee3a7b-0330-487b-be31-76d486bd991d",
+              "name": "chatInput",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "ee77cf94-6311-42a7-9898-5f23c8c672ab",
+              "name": "sessionId",
+              "value": "={{ $json.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -128,
+        240
+      ],
+      "id": "b232cded-3ebc-4aaa-8ae3-9a03b90b8d6f",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4.1",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        480
+      ],
+      "id": "e0c5d992-141c-4709-b82a-f2eac4ce0af0",
+      "name": "GPT 4.1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "hOcyeuRaBSCl0mzH",
+          "name": "Deepankar Openrouter"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "chatInput": "Jason Godwin from Florida Business Exchange"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Stalker Agent": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Try Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Search Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Scrape Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Crawl Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Crypto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crypto": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT 4.1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Stalker Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f00138b8-e70b-4dfe-9a1f-2c4bfd9cd199",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f0fc7dab00cade0db864c7b325e12f7997287a868429bd9e02881780c4c35ff8"
+  },
+  "id": "6K5Nm5WpO5kmiiZ1",
+  "tags": []
+}

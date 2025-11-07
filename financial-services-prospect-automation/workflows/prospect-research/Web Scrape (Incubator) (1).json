@@ -1,0 +1,185 @@
+{
+  "name": "Web Scrape (Incubator)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"payload\": {\n    \"url\": \"https://example.com\",\n    \"depth\": 2,\n    \"render\": \"true\"\n  }\n}\n"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -32,
+        272
+      ],
+      "id": "ef4304ca-a28f-4700-9684-42ccb4140a37",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0e58673-1018-4fab-9458-5598548e5873",
+              "name": "Success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "0dfff8f1-c5d6-4a2f-8669-221db642da8e",
+              "name": "payload",
+              "value": "={{ $json.error }}",
+              "type": "object"
+            },
+            {
+              "id": "e59ab6a0-d750-43c1-960f-63dafdab1f31",
+              "name": "text",
+              "value": "There was an error",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        368
+      ],
+      "id": "136f9a87-f771-43a7-9602-4137cc9d3db5",
+      "name": "Fail"
+    },
+    {
+      "parameters": {
+        "content": "## Web Scrape tool\nThe Web Scrape Tool takes a URL, scrapes it and returns the content.",
+        "height": 140,
+        "width": 380,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        16
+      ],
+      "typeVersion": 1,
+      "id": "9711cfcc-d95e-41d0-96eb-da65f0df4828",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0dd11e4e-893d-4145-b40b-56d93efe18f9",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a0125837-ddcf-4e12-b3ca-fa0ad084b8c3",
+              "name": "payload",
+              "value": "={{ $json.data }}",
+              "type": "object"
+            },
+            {
+              "id": "29f7e84f-38c5-4e2d-b7d3-d304e4cbd294",
+              "name": "text",
+              "value": "Success! here are the results.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        176
+      ],
+      "id": "e7db9de0-e35d-4025-9766-543a4afb38d3",
+      "name": "Success"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v2/scrape",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.payload.url }}\",\n  \"formats\": [\n    \"markdown\",\n    \"html\"\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        272
+      ],
+      "id": "63da91eb-9f96-42cf-9d32-c8118b5cf5fc",
+      "name": "FrieCrawl Scrape",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kJeE16TAhpenaTQ5",
+          "name": "FireCrawl Deepankar"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "payload": {
+            "mode": "scrape",
+            "url": "https://www.snowball.money/"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "FrieCrawl Scrape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FrieCrawl Scrape": {
+      "main": [
+        [
+          {
+            "node": "Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "220c2246-8cfa-4897-9a25-b1b588d22275",
+  "meta": {
+    "instanceId": "f0fc7dab00cade0db864c7b325e12f7997287a868429bd9e02881780c4c35ff8"
+  },
+  "id": "onpLuRCWO3ENfIN9",
+  "tags": []
+}
